@@ -19,7 +19,7 @@ memcached_SOURCES = memcached.c memcached.h \
                     thread.c daemon.c \
                     stats.c stats.h \
                     trace.h cache.h sasl_defs.h \
-					stdin_check.c
+										stdin_check.c
 
 noinst_LTLIBRARIES= libconfig.la libutil.la
 libconfig_la_SOURCES= config_parser.c
