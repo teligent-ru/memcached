@@ -78,12 +78,13 @@ extern "C" {
      * changes in the server.
      */
     typedef enum {
-        ON_CONNECT    = 0,      /**< A new connection was established. */
-        ON_DISCONNECT = 1,      /**< A connection was terminated. */
-        ON_AUTH       = 2       /**< A connection was authenticated */
+        ON_CONNECT     = 0,     /**< A new connection was established. */
+        ON_DISCONNECT  = 1,     /**< A connection was terminated. */
+        ON_AUTH        = 2,     /**< A connection was authenticated. */
+        ON_SWITCH_CONN = 3      /**< Processing a different connection on this thread. */
     } ENGINE_EVENT_TYPE;
 
-    #define MAX_ENGINE_EVENT_TYPE 2
+    #define MAX_ENGINE_EVENT_TYPE 3
 
     /**
      * Time relative to server start. Smaller than time_t on 64-bit systems.
@@ -162,6 +163,7 @@ extern "C" {
     /**
      * Interface to the server.
      */
+    struct thread_stats;
     typedef struct server_interface_v1 {
 
         /**
@@ -250,6 +252,13 @@ extern "C" {
          * parser config options
          */
         int (*parse_config)(const char *str, struct config_item items[], FILE *error);
+
+        /**
+         * Allocate and deallocate thread-specific stats arrays for engine-maintained separate stats
+         */
+        struct thread_stats *(*new_stats)(void);
+        void (*release_stats)(struct thread_stats *stats);
+
     } SERVER_HANDLE_V1;
 
     typedef void* (*GET_SERVER_API)(int interface);
@@ -461,6 +470,21 @@ extern "C" {
          * @param cookie The cookie provided by the frontend
          */
         void (*reset_stats)(ENGINE_HANDLE* handle, const void *cookie);
+
+        /**
+         * Get an array of per-thread stats. Set to NULL if you don't need it.
+         */
+        struct thread_stats *(*get_stats_struct)(ENGINE_HANDLE* handle,
+                                                 const void* cookie);
+
+        /**
+         * Aggregate stats among all per-connection stats. Set to NULL if you don't need it.
+         */
+        ENGINE_ERROR_CODE (*aggregate_stats)(ENGINE_HANDLE* handle,
+                                             const void* cookie,
+                                             void (*callback)(struct thread_stats*, struct thread_stats*),
+                                             struct thread_stats*);
+
 
         /**
          * Any unknown command will be considered engine specific.
