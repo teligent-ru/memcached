@@ -13,13 +13,8 @@ ARGV0=$0
 ARGS="$@"
 
 run() {
-<<<<<<< HEAD:config/autorun.sh
   echo "$ARGV0: running \`$@' $ARGS"
   $@ $ARGS
-=======
-	echo "$ARGV0: running \`$@' $ARGS"
-	$@ $ARGS
->>>>>>> dbf4b30... Replace ./autogen.sh with ./config/autorun.sh:config/autorun.sh
 }
 
 # Try to locate a program by using which, and verify that the file is an
@@ -43,17 +38,11 @@ then
   . config/pre_hook.sh
 fi
 
-<<<<<<< HEAD:config/autorun.sh
 mkdir -p m4
 
 if [ -d .git ]
 then
   perl config/version.pl || die "Failed to run config/version.pl"
-=======
-if [ -d .git ]
-then
-  perl config/version.pl
->>>>>>> dbf4b30... Replace ./autogen.sh with ./config/autorun.sh:config/autorun.sh
 fi
 
 # Try to detect the supported binaries if the user didn't

@@ -302,7 +302,6 @@ void add_statistics(const void *cookie, ADD_STAT add_stats,
 /*@null@*/
 static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, const void *cookie) {
     int i, total;
-    conn *c = (void*)cookie;
     /* Get the per-thread stats which contain some interesting aggregates */
 #ifdef FUTURE
     struct conn *conn = (struct conn*)cookie;

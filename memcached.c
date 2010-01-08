@@ -167,7 +167,7 @@ static inline void perform_callbacks(ENGINE_EVENT_TYPE type,
  * return unix time. Use the fact that delta can't exceed one month
  * (and real time value can't be that low).
  */
-rel_time_t realtime(const time_t exptime) {
+static rel_time_t realtime(const time_t exptime) {
     /* no. of seconds in 30 days - largest possible delta exptime */
 
     if (exptime == 0) return 0; /* 0 means never expire */
