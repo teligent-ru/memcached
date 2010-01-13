@@ -15,17 +15,31 @@ memcached_objs += win32/defs.o win32/ntservice.o win32/win32.o
 memcached_objs += win32/dlfcn.o
 #memcached_objs += testapp.o
 
-memcached_cflags := -std=gnu99 -O2 -fno-strict-aliasing
-memcached_cflags += -Wall -Werror -Wstrict-prototypes -Wmissing-prototypes
-memcached_cflags += -Wmissing-declarations -Wredundant-decls
-memcached_cflags += -I../memcached_win32_deps
-memcached_cflags += -Iwin32 -Iinclude -DHAVE_CONFIG_H
+
+win_cflags := -std=gnu99 -O2 -fno-strict-aliasing
+win_cflags += -Wall -Werror -Wstrict-prototypes -Wmissing-prototypes
+win_cflags += -Wmissing-declarations -Wredundant-decls
+win_cflags += -I../memcached_win32_deps
+win_cflags += -Iwin32 -Iinclude -DHAVE_CONFIG_H
 
 memcached_ldflags := -L../memcached_win32_deps
 memcached_ldflags += -levent
 memcached_ldflags += -lwsock32
 memcached_ldflags += -lws2_32
 memcached_ldflags += memcached_pthreadGC2.dll
+
+default_engine_objs := assoc.o default_engine.o 
+default_engine_objs += items.o  slabs.o
+default_engine_objs += win32/defs.o win32/win32.o
+default_engine_objs += win32/dlfcn.o
+#default_engine_objs += testapp.o
+
+default_engine_ldflags := -L../default_engine_win32_deps
+default_engine_ldflags += -levent
+default_engine_ldflags += -lwsock32
+default_engine_ldflags += -lws2_32
+default_engine_ldflags += -shared
+default_engine_ldflags += memcached_pthreadGC2.dll
 
 ## since we have our own memcached_pthreadGC2.dll to avoid name conflicts,
 ## we do not specify another -lpthread
@@ -36,14 +50,22 @@ configh:
 	./win32/config.pl
 
 %.o: %.c
-	${CC} ${memcached_cflags} -MD -c $< -o $@
+	${CC} ${win_cflags} -MD -c $< -o $@
 
 -include ${memcached_objs:.o=.d}
+
+${default_engine_obj}: ${default_engine_objs}
+	${CC} -o ${default_engine_obj} ${default_engine_objs} ${default_engine_ldflags}
 
 ${memcached_exe}: ${memcached_objs}
 	${CC} -o ${memcached_exe} ${memcached_objs} ${memcached_ldflags}
 
 #rm -f ${testapp_objs:.o=.d} ${testapp_objs} ${testapp_obj}
+
+prep: ${default_engine_obj}
+	test -d .libs || mkdir libs
+	cp ${default_engine_obj} .libs
+
 clean:
 	rm -f ${memcached_objs:.o=.d} ${memcached_objs} ${memcached_exe}
 	rm -rf memcached_win32

@@ -9,3 +9,4 @@ const char *dlerror(void);
 #define RTLD_LAZY 1
 #define RTLD_LOCAL 2
 
+#define RTLD_NOW 0x00002

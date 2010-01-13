@@ -7,6 +7,8 @@
 #include <sys/signal.h>
 #include <sys/resource.h>
 #include <netinet/in.h>
+#else
+#include "win32.h"
 #endif
 
 #include <fcntl.h>

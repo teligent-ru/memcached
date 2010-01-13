@@ -15,6 +15,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <pthread.h>
+/* PRIu64 */
+#include <inttypes.h>
 
 #ifndef __WIN32__
 #include <sys/types.h>
@@ -26,6 +28,7 @@
 #else
 #include "win32.h"
 #include "sysexits.h"
+#include "dlfcn.h"
 void run_server(void);
 void stop_server(void);
 void pause_server(void);

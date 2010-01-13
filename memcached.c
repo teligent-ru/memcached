@@ -4396,7 +4396,7 @@ static int enable_large_pages(void) {
 #endif
 }
 
-static const char* get_server_version() {
+static const char* get_server_version(void) {
     return VERSION;
 }
 
@@ -4803,7 +4803,11 @@ int main (int argc, char **argv) {
                     " and will decrease your memory efficiency.\n"
                 );
             }
+#ifndef __WIN32__
             old_opts += sprintf(old_opts, "item_size_max=%zu;",
+#else
+            old_opts += sprintf(old_opts, "item_size_max=%lu;", (long unsigned)
+#endif
                                 settings.item_size_max);
             break;
         case 'E':
