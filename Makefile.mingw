@@ -19,10 +19,10 @@ memcached_objs += win32/dlfcn.o
 win_cflags := -std=gnu99 -O2 -fno-strict-aliasing
 win_cflags += -Wall -Werror -Wstrict-prototypes -Wmissing-prototypes
 win_cflags += -Wmissing-declarations -Wredundant-decls
-win_cflags += -I../memcached_win32_deps
+win_cflags += -I/include -I../memcached_win32_deps
 win_cflags += -Iwin32 -Iinclude -DHAVE_CONFIG_H
 
-memcached_ldflags := -L../memcached_win32_deps
+memcached_ldflags := -L/lib -L../memcached_win32_deps
 memcached_ldflags += -levent
 memcached_ldflags += -lwsock32
 memcached_ldflags += -lws2_32

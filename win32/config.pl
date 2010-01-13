@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!perl.exe
 # If you think this is stupid/overkill, blame dormando
 
 use warnings;
