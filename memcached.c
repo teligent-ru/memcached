@@ -4805,10 +4805,11 @@ int main (int argc, char **argv) {
             }
 #ifndef __WIN32__
             old_opts += sprintf(old_opts, "item_size_max=%zu;",
+                                settings.item_size_max);
 #else
             old_opts += sprintf(old_opts, "item_size_max=%lu;", (long unsigned)
-#endif
                                 settings.item_size_max);
+#endif
             break;
         case 'E':
             engine = optarg;
