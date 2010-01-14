@@ -196,9 +196,4 @@ int getrusage(int who, struct rusage *usage);
 int kill(int pid, int sig);
 int sleep(int seconds);
 
-static inline void _set_errno(int err)
-{
-    errno = err;
-}
-
 #endif

@@ -5027,7 +5027,6 @@ int main (int argc, char **argv) {
 
     /* create unix mode sockets after dropping privileges */
     if (settings.socketpath != NULL) {
-        errno = 0;
         if (server_socket_unix(settings.socketpath,settings.access)) {
             vperror("failed to listen on UNIX socket: %s", settings.socketpath);
             exit(EX_OSERR);
@@ -5054,11 +5053,6 @@ int main (int argc, char **argv) {
             }
         }
 
-#ifndef WIN32
-        errno = 0;
-#else /* !WIN32 */
-    _set_errno(0);
-#endif /* WIN32 */
         if (settings.port && server_socket(settings.port, tcp_transport,
                                            portnumber_file)) {
             vperror("failed to listen on TCP port %d", settings.port);
@@ -5074,11 +5068,6 @@ int main (int argc, char **argv) {
         udp_port = settings.udpport ? settings.udpport : settings.port;
 
         /* create the UDP listening socket and bind it */
-#ifndef WIN32
-        errno = 0;
-#else /* !WIN32 */
-    _set_errno(0);
-#endif /* WIN32 */
         if (settings.udpport && server_socket(settings.udpport, udp_transport,
                                               portnumber_file)) {
             vperror("failed to listen on UDP port %d", settings.udpport);
