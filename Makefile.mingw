@@ -1,7 +1,7 @@
 # Hard coded Makefile for windows
 CC = mingw32-gcc
 
-all: memcached.exe default_engine.so.dll
+all: memcached.exe default_engine.so
 
 CFLAGS = -std=gnu99 -O2 -DNDEBUG -fno-strict-aliasing -Wall -Werror \
  -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls \
@@ -17,8 +17,8 @@ memcached.exe: $(MEMCACHED_OBJS)
 	${LINK.c} -o memcached.exe $(MEMCACHED_OBJS) -L/lib -levent -lwsock32 \
                   -lws2_32 memcached_pthreadGC2.dll
 
-default_engine.so.dll: $(DEFAULT_ENGINE_OBJS)
-	${LINK.c} -o default_engine.so.dll -shared ${DEFAULT_ENGINE_OBJS} \
+default_engine.so: $(DEFAULT_ENGINE_OBJS)
+	${LINK.c} -o default_engine.so -shared ${DEFAULT_ENGINE_OBJS} \
                   -L/lib memcached_pthreadGC2.dll
 
 config.h:
@@ -29,6 +29,6 @@ config.h:
 
 clean:
 	$(RM) ${MEMCACHED_OBJS} ${DEFAULT_ENGINE_OBJS} \
-              memcached.exe default_engine.so.dll *.d
+              memcached.exe default_engine.so *.d
 
 -include ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d}
