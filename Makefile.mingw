@@ -4,9 +4,11 @@
 CC := mingw32-gcc
 
 memcached_exe := memcached.exe
+default_engine_obj := default_engine.dll
 #testapp_obj := testapp.exe
 
 all: configh ${memcached_exe}
+#all: configh ${default_engine_obj} ${memcached_exe}
 
 memcached_objs := assoc.o cache.o globals.o hash.o items.o
 memcached_objs += memcached.o slabs.o thread.o util.o
@@ -16,11 +18,11 @@ memcached_objs += win32/dlfcn.o
 #memcached_objs += testapp.o
 
 
-win_cflags := -std=gnu99 -O2 -fno-strict-aliasing
+win_cflags := -std=gnu99 -O2 -DNDEBUG -fno-strict-aliasing
 win_cflags += -Wall -Werror -Wstrict-prototypes -Wmissing-prototypes
 win_cflags += -Wmissing-declarations -Wredundant-decls
-win_cflags += -I/include -I../memcached_win32_deps
-win_cflags += -Iwin32 -Iinclude -DHAVE_CONFIG_H
+win_cflags += -I/include
+win_cflags += -Iwin32 -I./include -DHAVE_CONFIG_H
 
 memcached_ldflags := -L/lib -L../memcached_win32_deps
 memcached_ldflags += -levent
@@ -29,12 +31,12 @@ memcached_ldflags += -lws2_32
 memcached_ldflags += memcached_pthreadGC2.dll
 
 default_engine_objs := assoc.o default_engine.o 
-default_engine_objs += items.o  slabs.o
+default_engine_objs += items.o  slabs.o util.c
 default_engine_objs += win32/defs.o win32/win32.o
 default_engine_objs += win32/dlfcn.o
 #default_engine_objs += testapp.o
 
-default_engine_ldflags := -L../default_engine_win32_deps
+default_engine_ldflags := -Iwin32 -Iinclude -I/include -L/lib -L../default_engine_win32_deps
 default_engine_ldflags += -levent
 default_engine_ldflags += -lwsock32
 default_engine_ldflags += -lws2_32
@@ -58,7 +60,7 @@ ${default_engine_obj}: ${default_engine_objs}
 	${CC} -o ${default_engine_obj} ${default_engine_objs} ${default_engine_ldflags}
 
 ${memcached_exe}: ${memcached_objs}
-	${CC} -o ${memcached_exe} ${memcached_objs} ${memcached_ldflags}
+	${CC} -o ${memcached_exe} ${memcached_objs} ${default_engine_obj} ${memcached_ldflags}
 
 #rm -f ${testapp_objs:.o=.d} ${testapp_objs} ${testapp_obj}
 
