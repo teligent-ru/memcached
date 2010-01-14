@@ -1,90 +1,34 @@
-# Linux, cross compile
-#CC := i386-mingw32msvc-gcc
-# Windows
-CC := mingw32-gcc
+# Hard coded Makefile for windows
+CC = mingw32-gcc
 
-memcached_exe := memcached.exe
-default_engine_obj := default_engine.dll
-#testapp_obj := testapp.exe
+all: memcached.exe default_engine.so.dll
 
-all: configh ${memcached_exe}
-#all: configh ${default_engine_obj} ${memcached_exe}
+CFLAGS = -std=gnu99 -O2 -DNDEBUG -fno-strict-aliasing -Wall -Werror \
+ -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls \
+ -Iinclude -Iwin32 -DHAVE_CONFIG_H
 
-memcached_objs := assoc.o cache.o globals.o hash.o items.o
-memcached_objs += memcached.o slabs.o thread.o util.o
-memcached_objs += stats.o
-memcached_objs += win32/defs.o win32/ntservice.o win32/win32.o
-memcached_objs += win32/dlfcn.o
-#memcached_objs += testapp.o
+MEMCACHED_OBJS = cache.o config_parser.o globals.o hash.o memcached.o stats.o \
+ stdin_check.o thread.o util.o win32/defs.o win32/dlfcn.o win32/ntservice.o \
+ win32/win32.o
 
+DEFAULT_ENGINE_OBJS = assoc.o default_engine.o items.o slabs.o util.o
 
-win_cflags := -std=gnu99 -O2 -DNDEBUG -fno-strict-aliasing
-win_cflags += -Wall -Werror -Wstrict-prototypes -Wmissing-prototypes
-win_cflags += -Wmissing-declarations -Wredundant-decls
-win_cflags += -I/include
-win_cflags += -Iwin32 -I./include -DHAVE_CONFIG_H
+memcached.exe: $(MEMCACHED_OBJS)
+	${LINK.c} -o memcached.exe $(MEMCACHED_OBJS) -L/lib -levent -lwsock32 \
+                  -lws2_32 memcached_pthreadGC2.dll
 
-memcached_ldflags := -L/lib -L../memcached_win32_deps
-memcached_ldflags += -levent
-memcached_ldflags += -lwsock32
-memcached_ldflags += -lws2_32
-memcached_ldflags += memcached_pthreadGC2.dll
+default_engine.so.dll: $(DEFAULT_ENGINE_OBJS)
+	${LINK.c} -o default_engine.so.dll -shared ${DEFAULT_ENGINE_OBJS} \
+                  -L/lib memcached_pthreadGC2.dll
 
-default_engine_objs := assoc.o default_engine.o 
-default_engine_objs += items.o  slabs.o util.c
-default_engine_objs += win32/defs.o win32/win32.o
-default_engine_objs += win32/dlfcn.o
-#default_engine_objs += testapp.o
-
-default_engine_ldflags := -Iwin32 -Iinclude -I/include -L/lib -L../default_engine_win32_deps
-default_engine_ldflags += -levent
-default_engine_ldflags += -lwsock32
-default_engine_ldflags += -lws2_32
-default_engine_ldflags += -shared
-default_engine_ldflags += memcached_pthreadGC2.dll
-
-## since we have our own memcached_pthreadGC2.dll to avoid name conflicts,
-## we do not specify another -lpthread
-# memcached_ldflags += -lpthread
-#testapp_ldflags := ${memcached_ldflags}
-
-configh: 
+config.h:
 	./win32/config.pl
 
 %.o: %.c
-	${CC} ${win_cflags} -MD -c $< -o $@
-
--include ${memcached_objs:.o=.d}
-
-${default_engine_obj}: ${default_engine_objs}
-	${CC} -o ${default_engine_obj} ${default_engine_objs} ${default_engine_ldflags}
-
-${memcached_exe}: ${memcached_objs}
-	${CC} -o ${memcached_exe} ${memcached_objs} ${default_engine_obj} ${memcached_ldflags}
-
-#rm -f ${testapp_objs:.o=.d} ${testapp_objs} ${testapp_obj}
-
-prep: ${default_engine_obj}
-	test -d .libs || mkdir libs
-	cp ${default_engine_obj} .libs
+	${COMPILE.c} -MD $< -o $@
 
 clean:
-	rm -f ${memcached_objs:.o=.d} ${memcached_objs} ${memcached_exe}
-	rm -rf memcached_win32
-	rm -rf memcached_win32*.tar.gz
-	rm -rf memcached_win32*.zip
+	$(RM) ${MEMCACHED_OBJS} ${DEFAULT_ENGINE_OBJS} \
+              memcached.exe default_engine.so.dll *.d
 
-bdist: ${memcached_exe}
-	rm -rf memcached_win32
-	mkdir memcached_win32
-	cp ${memcached_exe} memcached_win32
-	cp memcached_pthreadGC2.dll memcached_win32
-	tar -czvf memcached_win32-`git describe`.tar.gz memcached_win32
-	rm -rf memcached_win32
-
-zdist: ${memcached_exe}
-	rm -rf memcached_win32
-	mkdir memcached_win32
-	cp ${memcached_exe} memcached_win32
-	cp memcached_pthreadGC2.dll memcached_win32
-	zip -r memcached_win32-`git describe`.zip memcached_win32
+-include ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d}
