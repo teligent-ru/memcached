@@ -7,6 +7,7 @@
 *.l[ao]
 *.tcov
 *~
+*.exe
 .deps
 /.libs/
 /INSTALL
@@ -22,6 +23,7 @@
 /config/Doxyfile
 /config/Doxyfile-api
 /configure
+/default_engine.so
 /depcomp
 /doc/doxy
 /doc/doxy-api
@@ -36,7 +38,6 @@
 /memcached
 /memcached-*.tar.gz
 /memcached-*.zip
-memcached_*.tar.gz
 /memcached-debug
 /memcached-debug.profile
 /memcached.spec
@@ -48,6 +49,7 @@ memcached_*.tar.gz
 /testapp
 /timedrun
 /version.num
+/win32/config_version.h
 Makefile
 Makefile.in
 TAGS

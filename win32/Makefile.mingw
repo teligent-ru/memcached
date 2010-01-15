@@ -13,7 +13,7 @@ MEMCACHED_OBJS = cache.o config_parser.o globals.o hash.o memcached.o stats.o \
 
 DEFAULT_ENGINE_OBJS = assoc.o default_engine.o items.o slabs.o util.o
 
-memcached.exe: $(MEMCACHED_OBJS)
+memcached.exe: win32/config_version.h $(MEMCACHED_OBJS)
 	${LINK.c} -o memcached.exe $(MEMCACHED_OBJS) -L/lib -levent -lmswsock \
                   -lws2_32 -lpthreadGC2
 
@@ -21,14 +21,14 @@ default_engine.so: $(DEFAULT_ENGINE_OBJS)
 	${LINK.c} -o default_engine.so -shared ${DEFAULT_ENGINE_OBJS} \
                   -L/lib -lpthreadGC2
 
-config.h:
-	./win32/config.pl
+win32/config_version.h:
+	./win32/config.sh
 
 %.o: %.c
 	${COMPILE.c} -MD $< -o $@
 
 clean:
 	$(RM) ${MEMCACHED_OBJS} ${DEFAULT_ENGINE_OBJS} \
-              memcached.exe default_engine.so *.d
+              memcached.exe default_engine.so *.d win32/config_version.h
 
 -include ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d}
