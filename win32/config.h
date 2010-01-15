@@ -24,6 +24,7 @@
 /* machine is littleendian */
 #define ENDIAN_LITTLE 1
 
+#define ENABLE_ISASL 1
 
 /* Define to empty if `const' does not conform to ANSI C. */
 /* #undef const */

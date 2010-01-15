@@ -7,9 +7,9 @@ CFLAGS = -std=gnu99 -O2 -DNDEBUG -fno-strict-aliasing -Wall \
  -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls \
  -Iinclude -Iwin32 -I/include -DHAVE_CONFIG_H
 
-MEMCACHED_OBJS = cache.o config_parser.o globals.o hash.o memcached.o stats.o \
- stdin_check.o thread.o util.o win32/defs.o win32/dlfcn.o win32/ntservice.o \
- win32/win32.o
+MEMCACHED_OBJS = cache.o config_parser.o globals.o hash.o isasl.o memcached.o \
+ sasl_defs.o stats.o stdin_check.o thread.o util.o win32/defs.o win32/dlfcn.o \
+ win32/ntservice.o win32/win32.o
 
 DEFAULT_ENGINE_OBJS = assoc.o default_engine.o items.o slabs.o util.o
 
