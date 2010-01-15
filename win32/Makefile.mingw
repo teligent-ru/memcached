@@ -3,7 +3,7 @@ CC = gcc
 
 all: memcached.exe default_engine.so
 
-CFLAGS = -std=gnu99 -O2 -DNDEBUG -fno-strict-aliasing -Wall -Werror \
+CFLAGS = -std=gnu99 -O2 -DNDEBUG -fno-strict-aliasing -Wall \
  -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls \
  -Iinclude -Iwin32 -I/include -DHAVE_CONFIG_H
 
