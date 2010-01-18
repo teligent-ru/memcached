@@ -70,6 +70,75 @@
 #include <stdarg.h>
 #include <inttypes.h>
 
+/* The item must always be called "it" */
+#define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
+    thread_stats->slab_stats[settings.engine.v1->item_get_clsid(conn->item)].slab_op++;
+
+#define THREAD_GUTS(conn, thread_stats, slab_op, thread_op) \
+    thread_stats->thread_op++;
+
+#define THREAD_GUTS2(conn, thread_stats, slab_op, thread_op) \
+    thread_stats->slab_op++; \
+    thread_stats->thread_op++;
+
+#define SLAB_THREAD_GUTS(conn, thread_stats, slab_op, thread_op) \
+    SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
+    THREAD_GUTS(conn, thread_stats, slab_op, thread_op)
+
+#define STATS_INCR1(GUTS, conn, slab_op, thread_op, key, nkey) { \
+    struct independent_stats *independent_stats = get_independent_stats(conn); \
+    struct thread_stats *thread_stats = \
+        &independent_stats->thread_stats[conn->thread->index]; \
+    topkeys_t *topkeys = independent_stats->topkeys; \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    GUTS(conn, thread_stats, slab_op, thread_op); \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+    TK(topkeys, slab_op, key, nkey); \
+}
+
+#define STATS_INCR(conn, op, key, nkey) \
+    STATS_INCR1(THREAD_GUTS, conn, op, op, key, nkey)
+
+#define SLAB_INCR(conn, op, key, nkey) \
+    STATS_INCR1(SLAB_GUTS, conn, op, op, key, nkey)
+
+#define STATS_TWO(conn, slab_op, thread_op, key, nkey) \
+    STATS_INCR1(THREAD_GUTS2, conn, slab_op, thread_op, key, nkey)
+
+#define SLAB_TWO(conn, slab_op, thread_op, key, nkey) \
+    STATS_INCR1(SLAB_THREAD_GUTS, conn, slab_op, thread_op, key, nkey)
+
+#define STATS_HIT(conn, op, key, nkey) \
+    SLAB_TWO(conn, op##_hits, cmd_##op, key, nkey)
+
+#define STATS_MISS(conn, op, key, nkey) \
+    STATS_TWO(conn, op##_misses, cmd_##op, key, nkey)
+
+#define STATS_NOKEY(conn, op) { \
+    struct thread_stats *thread_stats = \
+        get_thread_stats(conn); \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    thread_stats->op++; \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+}
+
+#define STATS_NOKEY2(conn, op1, op2) { \
+    struct thread_stats *thread_stats = \
+        get_thread_stats(conn); \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    thread_stats->op1++; \
+    thread_stats->op2++; \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+}
+
+#define STATS_ADD(conn, op, amt) { \
+    struct thread_stats *thread_stats = \
+        get_thread_stats(conn); \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    thread_stats->op += amt; \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+}
+
 /*
  * We keep the current time of day in a global variable that's updated by a
  * timer event. This saves us a bunch of time() system calls (we really only
@@ -85,7 +154,8 @@ static volatile rel_time_t current_time;
  */
 static int new_socket(struct addrinfo *ai);
 static int try_read_command(conn *c);
-static struct thread_stats *get_thread_stats(conn *c);
+static inline struct independent_stats *get_independent_stats(conn *c);
+static inline struct thread_stats *get_thread_stats(conn *c);
 
 enum try_read_result {
     READ_DATA_RECEIVED,
@@ -136,7 +206,7 @@ static time_t process_started;     /* when the process was started */
 /** file scope variables **/
 static conn *listen_conn = NULL;
 static struct event_base *main_base;
-static struct thread_stats *default_thread_stats;
+static struct independent_stats *default_independent_stats;
 
 static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
 
@@ -207,7 +277,7 @@ static void stats_reset(const void *cookie) {
     stats.listen_disabled_num = 0;
     stats_prefix_clear();
     STATS_UNLOCK();
-    threadlocal_stats_reset(get_thread_stats(conn));
+    threadlocal_stats_reset(get_independent_stats(conn)->thread_stats);
     settings.engine.v1->reset_stats(settings.engine.v0, cookie);
 }
 
@@ -234,6 +304,7 @@ static void settings_init(void) {
     settings.backlog = 1024;
     settings.binding_protocol = negotiating_prot;
     settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
+    settings.topkeys = 0;
 }
 
 /*
@@ -837,10 +908,7 @@ static void complete_nread_ascii(conn *c) {
     assert(c != NULL);
 
     item *it = c->item;
-    struct thread_stats *thread_stats = get_thread_stats(c);
-    pthread_mutex_lock(&thread_stats->mutex);
-    thread_stats->slab_stats[settings.engine.v1->item_get_clsid(it)].set_cmds++;
-    pthread_mutex_unlock(&thread_stats->mutex);
+    const void *key = settings.engine.v1->item_get_key(it);
 
     if (strncmp(settings.engine.v1->item_get_data(it) + it->nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
@@ -851,28 +919,27 @@ static void complete_nread_ascii(conn *c) {
 #ifdef ENABLE_DTRACE
         switch (c->store_op) {
         case OPERATION_ADD:
-            MEMCACHED_COMMAND_ADD(c->sfd, settings.engine.v1->item_get_key(it), it->nkey,
+            MEMCACHED_COMMAND_ADD(c->sfd, key, it->nkey,
                                   (ret == ENGINE_SUCCESS) ? it->nbytes : -1, c->cas);
             break;
         case OPERATION_REPLACE:
-            MEMCACHED_COMMAND_REPLACE(c->sfd, settings.engine.v1->item_get_key(it), it->nkey,
+            MEMCACHED_COMMAND_REPLACE(c->sfd, key, it->nkey,
                                       (ret == ENGINE_SUCCESS) ? it->nbytes : -1, c->cas);
             break;
         case OPERATION_APPEND:
-            MEMCACHED_COMMAND_APPEND(c->sfd, settings.engine.v1->item_get_key(it), it->nkey,
+            MEMCACHED_COMMAND_APPEND(c->sfd, key, it->nkey,
                                      (ret == ENGINE_SUCCESS) ? it->nbytes : -1, c->cas);
             break;
         case OPERATION_PREPEND:
-            MEMCACHED_COMMAND_PREPEND(c->sfd, settings.engine.v1->item_get_key(it), it->nkey,
+            MEMCACHED_COMMAND_PREPEND(c->sfd, key, it->nkey,
                                       (ret == ENGINE_SUCCESS) ? it->nbytes : -1, c->cas);
             break;
         case OPERATION_SET:
-            MEMCACHED_COMMAND_SET(c->sfd, settings.engine.v1->item_get_key(it), it->nkey,
+            MEMCACHED_COMMAND_SET(c->sfd, key, it->nkey,
                                   (ret == ENGINE_SUCCESS) ? it->nbytes : -1, c->cas);
             break;
         case OPERATION_CAS:
-            MEMCACHED_COMMAND_CAS(c->sfd, settings.engine.v1->item_get_key(it), it->nkey, it->nbytes,
-                                  c->cas);
+            MEMCACHED_COMMAND_CAS(c->sfd, key, it->nkey, it->nbytes, c->cas);
             break;
         }
 #endif
@@ -895,6 +962,7 @@ static void complete_nread_ascii(conn *c) {
         }
     }
 
+    SLAB_INCR(c, cmd_set, key, it->nkey);
     /* release the c->item reference */
     settings.engine.v1->release(settings.engine.v0, c, c->item);
     c->item = 0;
@@ -1069,32 +1137,27 @@ static void complete_incr_bin(conn *c) {
                                          req->message.body.delta, req->message.body.initial,
                                          req->message.body.expiration, &c->cas, &rsp->message.body.value);
 
-    struct thread_stats *thread_stats = get_thread_stats(c);
     switch (ret) {
     case ENGINE_SUCCESS:
-        pthread_mutex_lock(&thread_stats->mutex);
-        if (incr) {
-            thread_stats->incr_hits++;
-        } else {
-            thread_stats->decr_hits++;
-        }
-        pthread_mutex_unlock(&thread_stats->mutex);
         rsp->message.body.value = htonll(rsp->message.body.value);
         write_bin_response(c, &rsp->message.body, 0, 0,
                            sizeof (rsp->message.body.value));
+        if (incr) {
+            STATS_INCR(c, incr_hits, key, nkey);
+        } else {
+            STATS_INCR(c, decr_hits, key, nkey);
+        }
         break;
     case ENGINE_KEY_EEXISTS:
         write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
         break;
     case ENGINE_KEY_ENOENT:
-        pthread_mutex_lock(&thread_stats->mutex);
-        if (c->cmd == PROTOCOL_BINARY_CMD_INCREMENT) {
-            thread_stats->incr_misses++;
-        } else {
-            thread_stats->decr_misses++;
-        }
-        pthread_mutex_unlock(&thread_stats->mutex);
         write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+        if (c->cmd == PROTOCOL_BINARY_CMD_INCREMENT) {
+            STATS_INCR(c, incr_misses, key, nkey);
+        } else {
+            STATS_INCR(c, decr_misses, key, nkey);
+        }
         break;
     case ENGINE_ENOMEM:
         write_bin_error(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -1115,11 +1178,6 @@ static void complete_update_bin(conn *c) {
     assert(c != NULL);
 
     item *it = c->item;
-
-    struct thread_stats *thread_stats = get_thread_stats(c);
-    pthread_mutex_lock(&thread_stats->mutex);
-    thread_stats->slab_stats[settings.engine.v1->item_get_clsid(it)].set_cmds++;
-    pthread_mutex_unlock(&thread_stats->mutex);
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
@@ -1183,6 +1241,8 @@ static void complete_update_bin(conn *c) {
         write_bin_error(c, eno, 0);
     }
 
+    SLAB_INCR(c, cmd_set, settings.engine.v1->item_get_key(it), it->nkey);
+
     if (!c->ewouldblock) {
         /* release the c->item reference */
         settings.engine.v1->release(settings.engine.v0, c, c->item);
@@ -1196,7 +1256,6 @@ static void process_bin_get(conn *c) {
     protocol_binary_response_get* rsp = (protocol_binary_response_get*)c->wbuf;
     char* key = binary_get_key(c);
     size_t nkey = c->binary_header.request.keylen;
-    struct thread_stats *thread_stats = get_thread_stats(c);
 
     if (settings.verbose > 1) {
         int ii;
@@ -1218,13 +1277,7 @@ static void process_bin_get(conn *c) {
         uint16_t keylen = 0;
         uint32_t bodylen = sizeof(rsp->message.body) + (it->nbytes - 2);
 
-        pthread_mutex_lock(&thread_stats->mutex);
-        thread_stats->get_cmds++;
-        thread_stats->slab_stats[settings.engine.v1->item_get_clsid(it)].get_hits++;
-        pthread_mutex_unlock(&thread_stats->mutex);
-
-        MEMCACHED_COMMAND_GET(c->sfd, settings.engine.v1->item_get_key(it), it->nkey,
-                              it->nbytes, ITEM_get_cas(it));
+        STATS_HIT(c, get, key, nkey);
 
         if (c->cmd == PROTOCOL_BINARY_CMD_GETK) {
             bodylen += nkey;
@@ -1247,10 +1300,7 @@ static void process_bin_get(conn *c) {
         /* Remember this command so we can garbage collect it later */
         c->item = it;
     } else if (ret == ENGINE_KEY_ENOENT) {
-        pthread_mutex_lock(&thread_stats->mutex);
-        thread_stats->get_cmds++;
-        thread_stats->get_misses++;
-        pthread_mutex_unlock(&thread_stats->mutex);
+        STATS_MISS(c, get, key, nkey);
 
         MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
 
@@ -1436,6 +1486,13 @@ static void process_bin_stat(conn *c) {
         }
     } else if (strncmp(subcommand, "aggregate", 9) == 0) {
         server_stats(&append_stats, c, true);
+    } else if (strncmp(subcommand, "topkeys", 7) == 0) {
+        topkeys_t *tk = get_independent_stats(c)->topkeys;
+        if (tk != NULL) {
+            topkeys_stats(tk, c, append_stats);
+        } else {
+            write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+        }
     } else {
         ENGINE_ERROR_CODE ret;
         ret = settings.engine.v1->get_stats(settings.engine.v0, c,
@@ -1444,6 +1501,7 @@ static void process_bin_stat(conn *c) {
 
         switch (ret) {
         case ENGINE_SUCCESS:
+            append_stats(NULL, 0, NULL, 0, c);
             write_and_free(c, c->stats.buffer, c->stats.offset);
             c->stats.buffer = NULL;
             break;
@@ -1682,17 +1740,13 @@ static void process_bin_complete_sasl_auth(conn *c) {
         fprintf(stderr, "sasl result code:  %d\n", result);
     }
 
-    struct thread_stats *thread_stats = get_thread_stats(c);
-
     switch(result) {
     case SASL_OK:
         write_bin_response(c, "Authenticated", 0, 0, strlen("Authenticated"));
-        pthread_mutex_lock(&thread_stats->mutex);
-        thread_stats->auth_cmds++;
-        pthread_mutex_unlock(&thread_stats->mutex);
         const void *uname = NULL;
         sasl_getprop(c->sasl_conn, SASL_USERNAME, &uname);
         perform_callbacks(ON_AUTH, uname, c);
+        STATS_NOKEY(c, auth_cmds);
         break;
     case SASL_CONTINUE:
         add_bin_header(c, PROTOCOL_BINARY_RESPONSE_AUTH_CONTINUE, 0, 0, outlen);
@@ -1706,10 +1760,7 @@ static void process_bin_complete_sasl_auth(conn *c) {
         if (settings.verbose)
             fprintf(stderr, "Unknown sasl response:  %d\n", result);
         write_bin_error(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
-        pthread_mutex_lock(&thread_stats->mutex);
-        thread_stats->auth_cmds++;
-        thread_stats->auth_errors++;
-        pthread_mutex_unlock(&thread_stats->mutex);
+        STATS_NOKEY2(c, auth_cmds, auth_errors);
     }
 }
 
@@ -2193,11 +2244,6 @@ static void process_bin_flush(conn *c) {
         exptime = ntohl(req->message.body.expiration);
     }
 
-    struct thread_stats *thread_stats = get_thread_stats(c);
-    pthread_mutex_lock(&thread_stats->mutex);
-    thread_stats->flush_cmds++;
-    pthread_mutex_unlock(&thread_stats->mutex);
-
     ENGINE_ERROR_CODE ret;
     ret = settings.engine.v1->flush(settings.engine.v0, c, exptime);
 
@@ -2206,6 +2252,7 @@ static void process_bin_flush(conn *c) {
     } else {
         write_bin_error(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
     }
+    STATS_NOKEY(c, cmd_flush);
 }
 
 static void process_bin_delete(conn *c) {
@@ -2456,6 +2503,13 @@ inline static void process_stats_detail(conn *c, const char *command) {
     }
 }
 
+static void aggregate_callback(void *in, void *out) {
+    struct thread_stats *out_thread_stats = out;
+    struct independent_stats *in_independent_stats = in;
+    threadlocal_stats_aggregate(in_independent_stats->thread_stats,
+                                out_thread_stats);
+}
+
 /* return server specific stats only */
 static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     pid_t pid = getpid();
@@ -2465,12 +2519,14 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     threadlocal_stats_clear(&thread_stats);
     if (aggregate) {
         if (settings.engine.v1->aggregate_stats != NULL) {
-            settings.engine.v1->aggregate_stats(settings.engine.v0, (const void *)c, threadlocal_stats_aggregate, &thread_stats);
+            settings.engine.v1->aggregate_stats(settings.engine.v0, (const void *)c, aggregate_callback, &thread_stats);
         } else {
-            threadlocal_stats_aggregate(get_thread_stats(c), &thread_stats);
+            threadlocal_stats_aggregate(get_independent_stats(c)->thread_stats,
+                                        &thread_stats);
         }
     } else {
-        threadlocal_stats_aggregate(get_thread_stats(c), &thread_stats);
+        threadlocal_stats_aggregate(get_independent_stats(c)->thread_stats,
+                                    &thread_stats);
     }
 
     struct slab_stats slab_stats;
@@ -2501,9 +2557,12 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("curr_connections", "%u", stats.curr_conns - 1);
     APPEND_STAT("total_connections", "%u", stats.total_conns);
     APPEND_STAT("connection_structures", "%u", stats.conn_structs);
-    APPEND_STAT("cmd_get", "%"PRIu64, thread_stats.get_cmds);
-    APPEND_STAT("cmd_set", "%"PRIu64, slab_stats.set_cmds);
-    APPEND_STAT("cmd_flush", "%"PRIu64, thread_stats.flush_cmds);
+    APPEND_STAT("cmd_get", "%"PRIu64, thread_stats.cmd_get);
+    APPEND_STAT("cmd_set", "%"PRIu64, slab_stats.cmd_set);
+    APPEND_STAT("cmd_flush", "%"PRIu64, thread_stats.cmd_flush);
+#if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
+    APPEND_STAT("auth_cmds", "%"PRIu64, thread_stats.auth_cmds);
+#endif
     APPEND_STAT("get_hits", "%"PRIu64, slab_stats.get_hits);
     APPEND_STAT("get_misses", "%"PRIu64, thread_stats.get_misses);
     APPEND_STAT("delete_misses", "%"PRIu64, thread_stats.delete_misses);
@@ -2553,6 +2612,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
                 prot_text(settings.binding_protocol));
     APPEND_STAT("auth_enabled_sasl", "%s", settings.sasl ? "yes" : "no");
     APPEND_STAT("item_size_max", "%d", settings.item_size_max);
+    APPEND_STAT("topkeys", "%d", settings.topkeys);
 }
 
 static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
@@ -2609,6 +2669,14 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         return ;
     } else if (strcmp(subcommand, "aggregate") == 0) {
         server_stats(&append_stats, c, true);
+    } else if (strcmp(subcommand, "topkeys") == 0) {
+        topkeys_t *tk = get_independent_stats(c)->topkeys;
+        if (tk != NULL) {
+            topkeys_stats(tk, c, append_stats);
+        } else {
+            out_string(c, "ERROR");
+            return;
+        }
     } else {
         /* getting here means that the subcommand is either engine specific or
            is invalid. query the engine and see. */
@@ -2651,7 +2719,6 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     item *it;
     token_t *key_token = &tokens[KEY_TOKEN];
     assert(c != NULL);
-    struct thread_stats *thread_stats = get_thread_stats(c);
 
     do {
         while(key_token->length != 0) {
@@ -2767,18 +2834,12 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     fprintf(stderr, ">%d sending key %s\n", c->sfd, settings.engine.v1->item_get_key(it));
 
                 /* item_get() has incremented it->refcount for us */
-                pthread_mutex_lock(&thread_stats->mutex);
-                thread_stats->slab_stats[settings.engine.v1->item_get_clsid(it)].get_hits++;
-                thread_stats->get_cmds++;
-                pthread_mutex_unlock(&thread_stats->mutex);
+                STATS_HIT(c, get, key, nkey);
                 *(c->ilist + i) = it;
                 i++;
 
             } else {
-                pthread_mutex_lock(&thread_stats->mutex);
-                thread_stats->get_misses++;
-                thread_stats->get_cmds++;
-                pthread_mutex_unlock(&thread_stats->mutex);
+                STATS_MISS(c, get, key, nkey);
                 MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
             }
 
@@ -2945,27 +3006,22 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
                                          &result);
 
     char temp[INCR_MAX_STORAGE_LEN];
-    struct thread_stats *thread_stats = get_thread_stats(c);
     switch (ret) {
     case ENGINE_SUCCESS:
-        pthread_mutex_lock(&thread_stats->mutex);
         if (incr) {
-            thread_stats->incr_hits++;
+            STATS_INCR(c, incr_hits, key, nkey);
         } else {
-            thread_stats->decr_hits++;
+            STATS_INCR(c, decr_hits, key, nkey);
         }
-        pthread_mutex_unlock(&thread_stats->mutex);
         snprintf(temp, sizeof(temp), "%"PRIu64, result);
         out_string(c, temp);
         break;
     case ENGINE_KEY_ENOENT:
-        pthread_mutex_lock(&thread_stats->mutex);
         if (incr) {
-            thread_stats->incr_misses++;
+            STATS_INCR(c, incr_misses, key, nkey);
         } else {
-            thread_stats->decr_misses++;
+            STATS_INCR(c, decr_misses, key, nkey);
         }
-        pthread_mutex_unlock(&thread_stats->mutex);
         out_string(c, "NOT_FOUND");
         break;
     case ENGINE_ENOMEM:
@@ -3014,24 +3070,17 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
         stats_prefix_record_delete(key, nkey);
     }
 
-    struct thread_stats *thread_stats = get_thread_stats(c);
     if (settings.engine.v1->get(settings.engine.v0, c, &it, key, nkey) == ENGINE_SUCCESS) {
         MEMCACHED_COMMAND_DELETE(c->sfd, settings.engine.v1->item_get_key(it), it->nkey);
-
-        pthread_mutex_lock(&thread_stats->mutex);
-        thread_stats->slab_stats[settings.engine.v1->item_get_clsid(it)].delete_hits++;
-        pthread_mutex_unlock(&thread_stats->mutex);
 
         settings.engine.v1->remove(settings.engine.v0, c, it);
         /* release our reference */
         settings.engine.v1->release(settings.engine.v0, c, it);
         out_string(c, "DELETED");
+        SLAB_INCR(c, delete_hits, key, nkey);
     } else {
-        pthread_mutex_lock(&thread_stats->mutex);
-        thread_stats->delete_misses++;
-        pthread_mutex_unlock(&thread_stats->mutex);
-
         out_string(c, "NOT_FOUND");
+        STATS_INCR(c, delete_misses, key, nkey);
     }
 }
 
@@ -3119,11 +3168,6 @@ static void process_command(conn *c, char *command) {
 
         set_noreply_maybe(c, tokens, ntokens);
 
-        struct thread_stats *thread_stats = get_thread_stats(c);
-        pthread_mutex_lock(&thread_stats->mutex);
-        thread_stats->flush_cmds++;
-        pthread_mutex_unlock(&thread_stats->mutex);
-
         if (ntokens == (c->noreply ? 3 : 2)) {
             exptime = 0;
         } else {
@@ -3141,6 +3185,7 @@ static void process_command(conn *c, char *command) {
         } else {
             out_string(c, "SERVER_ERROR failed to flush cache");
         }
+        STATS_NOKEY(c, cmd_flush);
         return;
 
     } else if (ntokens == 2 && (strcmp(tokens[COMMAND_TOKEN].value, "version") == 0)) {
@@ -3305,10 +3350,7 @@ static enum try_read_result try_read_udp(conn *c) {
                    0, &c->request_addr, &c->request_addr_size);
     if (res > 8) {
         unsigned char *buf = (unsigned char *)c->rbuf;
-        struct thread_stats *thread_stats = get_thread_stats(c);
-        pthread_mutex_lock(&thread_stats->mutex);
-        thread_stats->bytes_read += res;
-        pthread_mutex_unlock(&thread_stats->mutex);
+        STATS_ADD(c, bytes_read, res);
 
         /* Beginning of UDP packet is the request ID; save it. */
         c->request_id = buf[0] * 256 + buf[1];
@@ -3377,10 +3419,7 @@ static enum try_read_result try_read_network(conn *c) {
         res = read(c->sfd, c->rbuf + c->rbytes, avail);
         if (res > 0) {
 
-            struct thread_stats *thread_stats = get_thread_stats(c);
-            pthread_mutex_lock(&thread_stats->mutex);
-            thread_stats->bytes_read += res;
-            pthread_mutex_unlock(&thread_stats->mutex);
+            STATS_ADD(c, bytes_read, res);
             gotdata = READ_DATA_RECEIVED;
             c->rbytes += res;
             if (res == avail) {
@@ -3472,10 +3511,7 @@ static enum transmit_result transmit(conn *c) {
 
         res = sendmsg(c->sfd, m, 0);
         if (res > 0) {
-            struct thread_stats *thread_stats = get_thread_stats(c);
-            pthread_mutex_lock(&thread_stats->mutex);
-            thread_stats->bytes_written += res;
-            pthread_mutex_unlock(&thread_stats->mutex);
+            STATS_ADD(c, bytes_written, res);
 
             /* We've written some of the data. Remove the completed
                iovec entries from the list of pending writes. */
@@ -3606,10 +3642,7 @@ void drive_machine(conn *c) {
             if (nreqs >= 0) {
                 reset_cmd_handler(c);
             } else {
-                struct thread_stats *thread_stats = get_thread_stats(c);
-                pthread_mutex_lock(&thread_stats->mutex);
-                thread_stats->conn_yields++;
-                pthread_mutex_unlock(&thread_stats->mutex);
+                STATS_NOKEY(c, conn_yields);
                 if (c->rbytes > 0) {
                     /* We have already read in data into the input buffer,
                        so libevent will most likely not signal read events
@@ -3657,10 +3690,7 @@ void drive_machine(conn *c) {
             /*  now try reading from the socket */
             res = read(c->sfd, c->ritem, c->rlbytes);
             if (res > 0) {
-                struct thread_stats *thread_stats = get_thread_stats(c);
-                pthread_mutex_lock(&thread_stats->mutex);
-                thread_stats->bytes_read += res;
-                pthread_mutex_unlock(&thread_stats->mutex);
+                STATS_ADD(c, bytes_read, res);
                 if (c->rcurr == c->ritem) {
                     c->rcurr += res;
                 }
@@ -3713,10 +3743,7 @@ void drive_machine(conn *c) {
             /*  now try reading from the socket */
             res = read(c->sfd, c->rbuf, c->rsize > c->sbytes ? c->sbytes : c->rsize);
             if (res > 0) {
-                struct thread_stats *thread_stats = get_thread_stats(c);
-                pthread_mutex_lock(&thread_stats->mutex);
-                thread_stats->bytes_read += res;
-                pthread_mutex_unlock(&thread_stats->mutex);
+                STATS_ADD(c, bytes_read, res);
                 c->sbytes -= res;
                 break;
             }
@@ -4206,6 +4233,8 @@ static void usage(void) {
 #if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
     printf("-S            Turn on Sasl authentication\n");
 #endif
+    printf("-q            Disallow detailed stats command\n");
+    printf("-o <num>      Number of tOp keys to keep track of\n");
     return;
 }
 
@@ -4420,31 +4449,41 @@ static void *get_engine_specific(const void *cookie) {
     return c->engine_storage;
 }
 
-static struct thread_stats *new_stats(void) {
+static void *new_independent_stats(void) {
     int ii;
-    struct thread_stats *thread_stats = calloc(sizeof(struct thread_stats), settings.num_threads);
+    struct independent_stats *independent_stats = calloc(sizeof(independent_stats) + sizeof(struct thread_stats) * settings.num_threads, 1);
+    if (settings.topkeys > 0)
+        independent_stats->topkeys = topkeys_init(settings.topkeys);
     for (ii = 0; ii < settings.num_threads; ii++)
-        pthread_mutex_init(&thread_stats[ii].mutex, NULL);
-    return thread_stats;
+        pthread_mutex_init(&independent_stats->thread_stats[ii].mutex, NULL);
+    return independent_stats;
 }
 
-static struct thread_stats *get_thread_stats(conn *c) {
-    struct thread_stats *thread_stats;
+static void release_independent_stats(void *stats) {
+    int ii;
+    struct independent_stats *independent_stats = stats;
+    if (independent_stats->topkeys)
+        topkeys_free(independent_stats->topkeys);
+    for (ii = 0; ii < settings.num_threads; ii++)
+        pthread_mutex_destroy(&independent_stats->thread_stats[ii].mutex);
+    free(independent_stats);
+}
+
+static inline struct independent_stats *get_independent_stats(conn *c) {
+    struct independent_stats *independent_stats;
     if (settings.engine.v1->get_stats_struct != NULL) {
-        thread_stats = settings.engine.v1->get_stats_struct(settings.engine.v0, (const void *)c);
-        if (thread_stats == NULL)
-            thread_stats = default_thread_stats;
+        independent_stats = settings.engine.v1->get_stats_struct(settings.engine.v0, (const void *)c);
+        if (independent_stats == NULL)
+            independent_stats = default_independent_stats;
     } else {
-        thread_stats = default_thread_stats;
+        independent_stats = default_independent_stats;
     }
-    return thread_stats;
+    return independent_stats;
 }
 
-static void release_stats(struct thread_stats *thread_stats) {
-    int ii;
-    for (ii = 0; ii < settings.num_threads; ii++)
-        pthread_mutex_destroy(&thread_stats[ii].mutex);
-    free(thread_stats);
+static inline struct thread_stats *get_thread_stats(conn *c) {
+    struct independent_stats *independent_stats = get_independent_stats(c);
+    return &independent_stats->thread_stats[c->thread->index];
 }
 
 static void register_callback(ENGINE_EVENT_TYPE type,
@@ -4482,8 +4521,8 @@ static void *get_server_api(int interface)
         .notify_io_complete = notify_io_complete,
         .get_current_time = get_current_time,
         .parse_config = parse_config,
-        .new_stats = new_stats,
-        .release_stats = release_stats,
+        .new_stats = new_independent_stats,
+        .release_stats = release_independent_stats,
     };
 
     if (interface != 1) {
@@ -4610,7 +4649,7 @@ int main (int argc, char **argv) {
 #ifndef __WIN32__
           "d"   /* daemon mode */
 #else
-	  "d:"
+      "d:"
 #endif
           "l:"  /* interface to listen on */
           "u:"  /* user identity to run as */
@@ -4629,6 +4668,7 @@ int main (int argc, char **argv) {
           "E:"  /* Engine to load */
           "e:"  /* Engine options */
           "q"   /* Disallow detailed stats */
+          "o:"  /* Number of tOp keys to keep track of */
         ))) {
         switch (c) {
         case 'a':
@@ -4827,6 +4867,9 @@ int main (int argc, char **argv) {
 #endif
             settings.sasl = true;
             break;
+        case 'o':
+            settings.topkeys = atoi(optarg);
+            break;
         default:
             fprintf(stderr, "Illegal argument \"%c\"\n", c);
             return 1;
@@ -5002,7 +5045,7 @@ int main (int argc, char **argv) {
     /* initialize other stuff */
     stats_init();
     conn_init();
-    default_thread_stats = new_stats();
+    default_independent_stats = new_independent_stats();
 
 #ifndef __WIN32__
     /*
@@ -5085,7 +5128,7 @@ int main (int argc, char **argv) {
 
 #ifdef __WIN32__
     if (do_daemonize) {
-    	ServiceSetFunc(run_server, pause_server, continue_server, stop_server);
+        ServiceSetFunc(run_server, pause_server, continue_server, stop_server);
         ServiceRun();
     } else
 #endif

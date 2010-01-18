@@ -11,7 +11,7 @@ use Data::Dumper;
 # cwd == builddir.
 use Cwd;
 my $builddir = getcwd;
-our $MEMCACHED = 'memcached.exe';
+our $MEMCACHED = -e 'memcached.exe' ? 'memcached.exe' : 'memcached';
 
 
 @EXPORT = qw(new_memcached sleep mem_get_is mem_gets mem_gets_is mem_stats free_port);
@@ -28,7 +28,7 @@ sub mem_stats {
     my $stats = {};
     while (<$sock>) {
         last if /^(\.|END)/;
-        /^STAT (\S+) (\d+)/;
+        /^STAT (\S+) (\S+)/;
         #print " slabs: $_";
         $stats->{$1} = $2;
     }
@@ -215,7 +215,7 @@ sub new {
 
 sub DESTROY {
     my $self = shift;
-    kill 9, $self->{pid};
+    kill 15, $self->{pid};
 }
 
 sub port { $_[0]{port} }

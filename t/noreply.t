@@ -49,5 +49,4 @@ mem_get_is($sock, "noreply:foo");
 print $sock "add noreply:foo 0 0 1 noreply\r\n1\r\n";
 print $sock "delete noreply:foo 10 noreply\r\n";
 print $sock "add noreply:foo 0 0 1 noreply\r\n1\r\n";
-# undef result means we couldn't add an entry because the key is locked.
-mem_get_is($sock, "noreply:foo");
+mem_get_is($sock, "noreply:foo", "1");

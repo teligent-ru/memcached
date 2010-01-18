@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 149;
+use Test::More tests => 305;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -37,7 +37,7 @@ my $stats = mem_stats($sock);
 is($stats->{"evictions"}, "0", "no evictions to start");
 
 # set many big items, enough to get evictions
-for (my $i = 0; $i < 100; $i++) {
+for (my $i = 0; $i < 200; $i++) {
   print $sock "set item_$i 0 0 $len\r\n$big\r\n";
   is(scalar <$sock>, "STORED\r\n", "stored item_$i");
 }
@@ -45,7 +45,7 @@ for (my $i = 0; $i < 100; $i++) {
 # some evictions should have happened
 my $stats = mem_stats($sock);
 my $evictions = int($stats->{"evictions"});
-ok($evictions == 37, "some evictions happened");
+ok($evictions == 93, "some evictions happened");
 
 # the first big value should be gone
 mem_get_is($sock, "big", undef);

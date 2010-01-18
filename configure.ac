@@ -265,6 +265,88 @@ fi
 
 dnl ----------------------------------------------------------------------------
 
+trygenhashdir=""
+AC_ARG_WITH(genhash,
+       [  --with-genhash=PATH     Specify path to genhash build/install ],
+       [
+                if test "x$withval" != "xno" ; then
+                        trygenhashdir=$withval
+                fi
+       ]
+)
+
+dnl ------------------------------------------------------
+dnl genhash detection.
+
+GENHASH_URL=http://github.com/seanlynch/genhash/
+
+AC_CACHE_CHECK([for genhash directory], ac_cv_genhash_dir, [
+  saved_LIBS="$LIBS"
+  saved_LDFLAGS="$LDFLAGS"
+  saved_CPPFLAGS="$CPPFLAGS"
+  gh_found=no
+  for ghdir in $trygenhashdir "" $prefix /usr/local ; do
+    LDFLAGS="$saved_LDFLAGS"
+    LIBS="$saved_LIBS -lgenhash"
+
+    # Skip the directory if it isn't there.
+    if test ! -z "$ghdir" -a ! -d "$ghdir" ; then
+       continue;
+    fi
+    if test ! -z "$ghdir" ; then
+      if test -d "$ghdir/lib" ; then
+        LDFLAGS="-L$ghdir/lib $LDFLAGS"
+      else
+        LDFLAGS="-L$ghdir $LDFLAGS"
+      fi
+      if test -d "$ghdir/include" ; then
+        CPPFLAGS="-I$ghdir/include $CPPFLAGS"
+      else
+        CPPFLAGS="-I$ghdir $CPPFLAGS"
+      fi
+    fi
+    # Can I compile and link it?
+    AC_TRY_LINK([#include <sys/time.h>
+#include <sys/types.h>
+#include <genhash.h>], [ int h = genhash_string_hash("hello world", 11); ],
+       [ genhash_linked=yes ], [ genhash_linked=no ])
+    if test $genhash_linked = yes; then
+       if test ! -z "$ghdir" ; then
+         ac_cv_genhash_dir=$ghdir
+       else
+         ac_cv_genhash_dir="(system)"
+       fi
+       gh_found=yes
+       break
+    fi
+  done
+  LIBS="$saved_LIBS"
+  LDFLAGS="$saved_LDFLAGS"
+  CPPFLAGS="$saved_CPPFLAGS"
+  if test $gh_found = no ; then
+    AC_MSG_ERROR([genhash is required.  You can get it from $GENHASH_URL
+
+      If it's already installed, specify its path using --with-genhash=/dir/
+])
+  fi
+])
+LIBS="$LIBS -lgenhash"
+if test $ac_cv_genhash_dir != "(system)"; then
+  if test -d "$ac_cv_genhash_dir/lib" ; then
+    LDFLAGS="-L$ac_cv_genhash_dir/lib $LDFLAGS"
+    le_libdir="$ac_cv_genhash_dir/lib"
+  else
+    LDFLAGS="-L$ac_cv_genhash_dir $LDFLAGS"
+    le_libdir="$ac_cv_genhash_dir"
+  fi
+  if test -d "$ac_cv_genhash_dir/include" ; then
+    CPPFLAGS="-I$ac_cv_genhash_dir/include $CPPFLAGS"
+  else
+    CPPFLAGS="-I$ac_cv_genhash_dir $CPPFLAGS"
+  fi
+fi
+
+dnl ----------------------------------------------------------------------------
 AC_SEARCH_LIBS(socket, socket)
 AC_SEARCH_LIBS(gethostbyname, nsl)
 AC_SEARCH_LIBS(umem_cache_create, umem)
