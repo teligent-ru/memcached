@@ -13,7 +13,8 @@ print $sock "stats topkeys\r\n";
 
 is(scalar <$sock>, "ERROR\r\n", "No topkeys without command line option.");
 
-$server = new_memcached('-o 100');
+$ENV{"MEMCACHED_TOP_KEYS"} = "100";
+$server = new_memcached();
 $sock = $server->sock;
 
 print $sock "stats topkeys\r\n";

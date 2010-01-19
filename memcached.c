@@ -4234,7 +4234,9 @@ static void usage(void) {
     printf("-S            Turn on Sasl authentication\n");
 #endif
     printf("-q            Disallow detailed stats command\n");
-    printf("-o <num>      Number of tOp keys to keep track of\n");
+    printf("\nEnvironment variables:\n"
+           "MEMCACHED_PORT_FILENAME   File to write port information to\n"
+           "MEMCACHED_TOP_KEYS        Number of top keys to keep track of\n");
     return;
 }
 
@@ -4668,7 +4670,6 @@ int main (int argc, char **argv) {
           "E:"  /* Engine to load */
           "e:"  /* Engine options */
           "q"   /* Disallow detailed stats */
-          "o:"  /* Number of tOp keys to keep track of */
         ))) {
         switch (c) {
         case 'a':
@@ -4867,12 +4868,17 @@ int main (int argc, char **argv) {
 #endif
             settings.sasl = true;
             break;
-        case 'o':
-            settings.topkeys = atoi(optarg);
-            break;
         default:
             fprintf(stderr, "Illegal argument \"%c\"\n", c);
             return 1;
+        }
+    }
+
+    char *topkeys_env = getenv("MEMCACHED_TOP_KEYS");
+    if (topkeys_env != NULL) {
+        settings.topkeys = atoi(topkeys_env);
+        if (settings.topkeys < 0) {
+            settings.topkeys = 0;
         }
     }
 
