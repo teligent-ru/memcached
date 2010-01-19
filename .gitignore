@@ -49,7 +49,6 @@
 /testapp
 /timedrun
 /version.num
-/win32/config_version.h
 Makefile
 Makefile.in
 TAGS
