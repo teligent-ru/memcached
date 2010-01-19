@@ -1,6 +1,6 @@
 #! /bin/sh
 MEMC_VERSION=`git describe | tr '-' '_'`;
-cat > ./win32/config_version.h << EOF
+cat > .libs/config_version.h << EOF
 #ifndef CONFIG_VERSION_H
 #define CONFIG_VERSION_H
 
