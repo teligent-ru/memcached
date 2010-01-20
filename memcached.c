@@ -93,7 +93,7 @@
     pthread_mutex_lock(&thread_stats->mutex); \
     GUTS(conn, thread_stats, slab_op, thread_op); \
     pthread_mutex_unlock(&thread_stats->mutex); \
-    TK(topkeys, slab_op, key, nkey); \
+    TK(topkeys, slab_op, key, nkey, current_time); \
 }
 
 #define STATS_INCR(conn, op, key, nkey) \
@@ -1489,7 +1489,7 @@ static void process_bin_stat(conn *c) {
     } else if (strncmp(subcommand, "topkeys", 7) == 0) {
         topkeys_t *tk = get_independent_stats(c)->topkeys;
         if (tk != NULL) {
-            topkeys_stats(tk, c, append_stats);
+            topkeys_stats(tk, c, current_time, append_stats);
         } else {
             write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         }
@@ -2672,7 +2672,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
     } else if (strcmp(subcommand, "topkeys") == 0) {
         topkeys_t *tk = get_independent_stats(c)->topkeys;
         if (tk != NULL) {
-            topkeys_stats(tk, c, append_stats);
+            topkeys_stats(tk, c, current_time, append_stats);
         } else {
             out_string(c, "ERROR");
             return;
@@ -4517,6 +4517,11 @@ static rel_time_t get_current_time(void)
     return current_time;
 }
 
+static void count_eviction(const void *cookie, const void *key, const int nkey) {
+    topkeys_t *tk = get_independent_stats((conn*)cookie)->topkeys;
+    TK(tk, evictions, key, nkey, get_current_time());
+}
+
 /**
  * Callback the engines may call to get the public server interface
  * @param interface the requested interface from the server
@@ -4538,6 +4543,7 @@ static void *get_server_api(int interface)
         .parse_config = parse_config,
         .new_stats = new_independent_stats,
         .release_stats = release_independent_stats,
+        .count_eviction = count_eviction,
     };
 
     if (interface != 1) {
