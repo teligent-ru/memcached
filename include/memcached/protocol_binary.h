@@ -396,7 +396,7 @@ extern "C"
      */
     typedef union {
         struct {
-            protocol_binary_response_header header;
+            protocol_binary_request_header header;
             struct {
                 uint16_t size;
                 uint8_t  reserved;

@@ -987,19 +987,8 @@ static char* binary_get_key(conn *c) {
     return c->rcurr - (c->binary_header.request.keylen);
 }
 
-static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_len, uint32_t body_len) {
+static void insert_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_len, uint32_t body_len) {
     protocol_binary_response_header* header;
-
-    assert(c);
-
-    c->msgcurr = 0;
-    c->msgused = 0;
-    c->iovused = 0;
-    if (add_msghdr(c) != 0) {
-        /* XXX:  out_string is inappropriate here */
-        out_string(c, "SERVER_ERROR out of memory");
-        return;
-    }
 
     header = (protocol_binary_response_header *)c->wbuf;
 
@@ -1028,6 +1017,21 @@ static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_
     }
 
     add_iov(c, c->wbuf, sizeof(header->response));
+}
+
+static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_len, uint32_t body_len) {
+    assert(c);
+
+    c->msgcurr = 0;
+    c->msgused = 0;
+    c->iovused = 0;
+    if (add_msghdr(c) != 0) {
+        /* XXX:  out_string is inappropriate here */
+        out_string(c, "SERVER_ERROR out of memory");
+        return;
+    }
+
+    insert_bin_header(c, err, hdr_len, key_len, body_len);
 }
 
 static void write_bin_error(conn *c, protocol_binary_response_status err, int swallow) {
@@ -1328,6 +1332,81 @@ static void process_bin_get(conn *c) {
 
     if (settings.detail_enabled && ret != ENGINE_EWOULDBLOCK) {
         stats_prefix_record_get(key, nkey, ret == ENGINE_SUCCESS);
+    }
+}
+
+
+/**
+ * Process a binary range get command.
+ */
+static void process_bin_rget(conn *c) {
+    ENGINE_ERROR_CODE ret;
+    protocol_binary_request_rget *request = (void*)(c->rcurr -
+            (c->binary_header.request.bodylen + sizeof(c->binary_header)));
+    char *packet = (void*)request;
+
+    char *start_key = packet + sizeof(request->bytes);
+    int start_nkey = ntohs(request->message.header.request.keylen);
+    char *end_key = start_key + start_nkey;
+    int end_nkey = ntohs(request->message.body.size);
+    uint32_t maxkey = ntohl(request->message.body.max_results);
+
+    c->msgcurr = 0;
+    c->msgused = 0;
+    c->iovused = 0;
+    if (add_msghdr(c) != 0) {
+        if (settings.verbose > 0) {
+            fprintf(stderr, "Failed to create output headers\n");
+        }
+        conn_set_state(c, conn_closing);
+        return ;
+    }
+    c->wcurr = c->wbuf;
+    c->wbytes = 0;
+    size_t num = c->isize;
+
+    ret = settings.engine.v1->rget(settings.engine.v0, c, c->ilist, &num,
+                                   start_key, start_nkey, end_key, end_nkey,
+                                   maxkey);
+
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_EWOULDBLOCK) {
+        for (int ii = 0; ii < num; ++ii) {
+            item *it = c->ilist[ii];
+            /* the length has two unnecessary bytes ("\r\n") */
+            uint16_t keylen = it->nkey;
+            uint32_t bodylen = sizeof(it->flags) + (it->nbytes - 2) + keylen;
+
+            c->cas = htonll(settings.engine.v1->item_get_cas(it));
+            insert_bin_header(c, 0, sizeof(it->flags), keylen, bodylen);
+            add_iov(c, &it->flags, sizeof(it->flags));
+            add_iov(c, settings.engine.v1->item_get_key(it), it->nkey);
+            add_iov(c, settings.engine.v1->item_get_data(it), it->nbytes - 2);
+        }
+
+        if (num > 0) {
+            c->write_and_go = c->state;
+            conn_set_state(c, conn_mwrite);
+        }
+
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+        }
+    } else if (ret == ENGINE_KEY_ENOENT) {
+        protocol_binary_response_header header = {
+            .response.magic = (uint8_t)PROTOCOL_BINARY_RES,
+            .response.opcode = PROTOCOL_BINARY_CMD_RGET,
+            .response.datatype = (uint8_t)PROTOCOL_BINARY_RAW_BYTES,
+            .response.opaque = c->opaque
+        };
+
+        memcpy(c->wcurr, header.bytes, sizeof(header.response));
+        c->wbytes += sizeof(header.response);
+        c->write_and_go = conn_new_cmd;
+        conn_set_state(c, conn_write);
+        // no more data.. send back an empty packet
+    } else {
+        // we hit an error situation
+        write_bin_error(c, PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND, 0);
     }
 }
 
@@ -2060,6 +2139,15 @@ static void dispatch_bin_command(conn *c) {
                 protocol_error = 1;
             }
             break;
+        case PROTOCOL_BINARY_CMD_RGET:
+            if (settings.engine.v1->rget == NULL) {
+                write_bin_error(c, PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND,
+                                bodylen);
+            } else {
+                bin_read_chunk(c, bin_reading_packet,
+                        c->binary_header.request.bodylen);
+            }
+            break;
         default:
             if (settings.engine.v1->unknown_command == NULL) {
                 write_bin_error(c, PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND,
@@ -2327,7 +2415,11 @@ static void complete_nread_binary(conn *c) {
         process_bin_complete_sasl_auth(c);
         break;
     case bin_reading_packet:
-        process_bin_packet(c);
+        if (c->cmd == PROTOCOL_BINARY_CMD_RGET) {
+            process_bin_rget(c);
+        } else {
+            process_bin_packet(c);
+        }
         break;
     default:
         fprintf(stderr, "Not handling substate %d\n", c->substate);

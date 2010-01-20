@@ -91,6 +91,12 @@ struct engine_stats {
    uint64_t total_items;
 };
 
+/**
+ * Defininition of cookie-specific data
+ */
+struct cookie_specific {
+    hash_item *cursor; /* For keeping track of current slab, see slabs_clsid */
+};
 
 /**
  * Definition of the private instance data used by the default engine.

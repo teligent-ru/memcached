@@ -1702,6 +1702,9 @@ static enum test_return test_binary_illegal(void) {
         validate_response_header(&buffer.response, cmd,
                                  PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND);
         ++cmd;
+        if (cmd == PROTOCOL_BINARY_CMD_RGET) {
+            ++cmd;
+        }
     }
 
     return TEST_PASS;

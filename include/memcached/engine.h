@@ -445,6 +445,40 @@ extern "C" {
                                    const void* cookie, time_t when);
 
         /*
+         * Range operations. Set to NULL if you don't support them
+         */
+
+        /**
+         * Retrieve multiple items. Try to retrieve a batch of objects whos keys
+         * match a specific range. In order to avoid locking up the cache too long,
+         * the core will request a batch at a time, and the backend needs to keep
+         * track on the current location between each invokation.
+         *
+         * @param handle the engine handle
+         * @param cookie The cookie provided by the frontend
+         * @param item Pointer to an array to store items in
+         * @param num In: number of available slots (starting from 0) in the item array
+         *            Out: The number of items stored in the item array
+         * @param start_key the start of the range
+         * @param start_nkey the length of start_key
+         * @param end_key the end of the range
+         * @param end_nkey the length of nkey
+         * @param max the maximum number of items the client requested (hint)
+         *
+         * @return ENGINE_SUCCESS on success (num should be > 0)
+         *         ENGINE_KEY_ENOENT no more entries in range
+         */
+        ENGINE_ERROR_CODE (*rget)(ENGINE_HANDLE* handle,
+                                  const void* cookie,
+                                  item** item,
+                                  size_t *num,
+                                  const void* start_key,
+                                  const int start_nkey,
+                                  const void* end_key,
+                                  const int end_nkey,
+                                  uint32_t max);
+
+        /*
          * Statistics
          */
 

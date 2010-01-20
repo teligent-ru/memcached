@@ -65,6 +65,17 @@ static ENGINE_ERROR_CODE default_unknown_command(ENGINE_HANDLE* handle,
                                                  protocol_binary_request_header *request,
                                                  ADD_RESPONSE response);
 
+
+static ENGINE_ERROR_CODE default_rget(ENGINE_HANDLE* handle,
+                                      const void* cookie,
+                                      item** item,
+                                      size_t *num,
+                                      const void* start_key,
+                                      const int start_nkey,
+                                      const void* end_key,
+                                      const int end_nkey,
+                                      uint32_t max);
+
 ENGINE_ERROR_CODE create_instance(uint64_t interface,
                                   GET_SERVER_API get_server_api,
                                   ENGINE_HANDLE **handle) {
@@ -95,6 +106,7 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface,
          .store = default_store,
          .arithmetic = default_arithmetic,
          .flush = default_flush,
+         .rget = default_rget,
          .unknown_command = default_unknown_command,
          .item_get_cas = item_get_cas,
          .item_set_cas = item_set_cas,
@@ -148,6 +160,23 @@ static const char* default_get_info(ENGINE_HANDLE* handle) {
    return "Default engine v0.1";
 }
 
+static void handle_disconnect(const void *cookie,
+                              ENGINE_EVENT_TYPE type,
+                              const void *event_data,
+                              const void *cb_data) {
+    struct default_engine *e = (struct default_engine*)cb_data;
+    struct cookie_specific *specific = e->server.get_engine_specific(cookie);
+    if (specific != NULL) {
+        if (specific->cursor != NULL) {
+            if (specific->cursor->prev != NULL) {
+                item_unlink_cursor(e, specific->cursor);
+            }
+            free(specific->cursor);
+        }
+        free(specific);
+    }
+}
+
 static ENGINE_ERROR_CODE default_initialize(ENGINE_HANDLE* handle,
                                             const char* config_str) {
    struct default_engine* se = get_handle(handle);
@@ -167,6 +196,8 @@ static ENGINE_ERROR_CODE default_initialize(ENGINE_HANDLE* handle,
    if (ret != ENGINE_SUCCESS) {
       return ret;
    }
+
+    se->server.register_callback(ON_DISCONNECT, handle_disconnect, se);
 
    return ENGINE_SUCCESS;
 }
@@ -403,6 +434,16 @@ static ENGINE_ERROR_CODE default_unknown_command(ENGINE_HANDLE* handle,
    }
 }
 
+static struct cookie_specific* get_specific(struct default_engine* engine,
+                                            const void *cookie) {
+   struct cookie_specific* ret = engine->server.get_engine_specific(cookie);
+   if (ret == NULL) {
+       ret = calloc(1, sizeof(*ret));
+       engine->server.store_engine_specific(cookie, ret);
+   }
+
+   return ret;
+}
 
 uint64_t item_get_cas(const item* item)
 {
@@ -437,4 +478,52 @@ char* item_get_data(const item* item)
 uint8_t item_get_clsid(const item* item)
 {
     return 0;
+}
+
+static ENGINE_ERROR_CODE default_rget(ENGINE_HANDLE* handle,
+                                      const void* cookie,
+                                      item** item,
+                                      size_t *num,
+                                      const void* start_key,
+                                      const int start_nkey,
+                                      const void* end_key,
+                                      const int end_nkey,
+                                      uint32_t max)
+{
+    struct default_engine *engine = get_handle(handle);
+    struct cookie_specific *specific = get_specific(engine, cookie);
+    if (specific == NULL) {
+        return ENGINE_ENOMEM;
+    } else if (specific->cursor == NULL) {
+        if ((specific->cursor = calloc(1, sizeof(*specific->cursor))) == NULL) {
+            return ENGINE_ENOMEM;
+        }
+
+        /* make the item inaccessible from the clients ;-) */
+        specific->cursor->refcount = 1;
+        if (item_link_cursor(engine, specific->cursor) != ENGINE_SUCCESS) {
+            free(specific->cursor);
+            specific->cursor = NULL;
+            return ENGINE_KEY_ENOENT;
+        }
+    }
+
+    if (specific->cursor->slabs_clsid == POWER_LARGEST && specific->cursor->prev == NULL) {
+        /* Clean up cursor */
+        free(specific->cursor);
+        specific->cursor = NULL;
+        return ENGINE_KEY_ENOENT;
+    }
+
+    ENGINE_ERROR_CODE ret = item_walk_cursor(engine, specific->cursor, item,
+                                             num, start_key, start_nkey,
+                                             end_key, end_nkey);
+
+    if (ret != ENGINE_SUCCESS) {
+        /* Clean up cursor */
+        free(specific->cursor);
+        specific->cursor = NULL;
+    }
+
+    return ret;
 }

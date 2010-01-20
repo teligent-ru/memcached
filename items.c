@@ -711,6 +711,118 @@ static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine,
     return ENGINE_SUCCESS;
 }
 
+static ENGINE_ERROR_CODE do_item_link_cursor(struct default_engine *engine,
+                                             hash_item *cursor)
+{
+    int ii;
+    for (ii = 1; ii < POWER_LARGEST; ++ii) {
+        if (engine->items.tails[ii] != NULL) {
+            break;
+        }
+    }
+
+    if (ii == POWER_LARGEST) {
+        return ENGINE_KEY_ENOENT;
+    }
+
+    cursor->slabs_clsid = (uint8_t)ii;
+    cursor->prev = engine->items.tails[ii];
+    engine->items.tails[ii]->next = cursor;
+    engine->items.tails[ii] = cursor;
+    engine->items.sizes[ii]++;
+
+    return ENGINE_SUCCESS;
+}
+
+static bool accept_key(const void *key, int nkey, const void *start_key, int start_nkey,
+                       const void *end_key, int end_nkey)
+{
+    if (start_nkey > 0) {
+        int r = memcmp(key, start_key, nkey > start_nkey ? start_nkey : nkey);
+
+        if (r < 0 || (r == 0 && nkey < start_nkey)) {
+            return false;
+        }
+    }
+
+    if (end_nkey > 0) {
+        int r = memcmp(key, end_key, nkey > end_nkey ? end_nkey : nkey);
+        if (r > 0 || (r == 0 && nkey > end_nkey)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static ENGINE_ERROR_CODE do_item_walk_cursor(struct default_engine *engine,
+                                             hash_item *cursor,
+                                             item** item,
+                                             size_t *num,
+                                             const void* start_key,
+                                             const int start_nkey,
+                                             const void* end_key,
+                                             const int end_nkey)
+{
+    size_t space = *num;
+    *num = 0;
+
+    /* @todo fix backoff logic so that I'm not locking up the server "forever".. */
+    while (cursor->prev != NULL) {
+        /* Ignore cursors */
+        if (!(cursor->prev->item.nkey == 0 && cursor->prev->item.nbytes == 0)) {
+            if ((start_nkey == 0 && end_nkey == 0) ||
+                accept_key(item_get_key(&cursor->prev->item),
+                           cursor->prev->item.nkey,
+                           start_key, start_nkey, end_key, end_nkey))
+            {
+                item[*num] = &cursor->prev->item;
+                ++(*num);
+
+                if (*num == space) {
+                    return ENGINE_SUCCESS;
+                }
+            }
+        }
+
+        /* move cursor */
+        hash_item *ptr = cursor->prev;
+        item_unlink_q(engine, cursor);
+
+        if (ptr == engine->items.heads[cursor->slabs_clsid]) {
+            /* move on to next slab class */
+            int ii;
+            for (ii = cursor->slabs_clsid + 1; ii < POWER_LARGEST; ++ii) {
+                if (engine->items.tails[ii] != NULL) {
+                    break;
+                }
+            }
+
+            if (ii == POWER_LARGEST) {
+                /* NO MORE ITEMS */
+                cursor->next = NULL;
+                cursor->prev = NULL;
+                cursor->slabs_clsid = POWER_LARGEST;
+                return *num == 0 ? ENGINE_KEY_ENOENT : ENGINE_SUCCESS;
+            }
+
+            cursor->slabs_clsid = (uint8_t)ii;
+            cursor->next = NULL;
+            cursor->prev = engine->items.tails[ii];
+            engine->items.tails[ii]->next = cursor;
+            engine->items.tails[ii] = cursor;
+            engine->items.sizes[ii]++;
+
+        } else {
+            cursor->next = ptr;
+            cursor->prev = ptr->prev;
+            cursor->prev->next = cursor;
+            ptr->prev = cursor;
+        }
+    }
+
+    return ENGINE_SUCCESS;;
+}
 
 /********************************* ITEM ACCESS *******************************/
 
@@ -857,5 +969,43 @@ void item_stats_sizes(struct default_engine *engine,
 {
     pthread_mutex_lock(&engine->cache_lock);
     do_item_stats_sizes(engine, add_stat, (void*)cookie);
+    pthread_mutex_unlock(&engine->cache_lock);
+}
+
+
+ENGINE_ERROR_CODE item_walk_cursor(struct default_engine *engine,
+                                   hash_item* cursor,
+                                   item** item,
+                                   size_t *num,
+                                   const void* start_key,
+                                   const int start_nkey,
+                                   const void* end_key,
+                                   const int end_nkey)
+{
+    ENGINE_ERROR_CODE ret;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    ret = do_item_walk_cursor(engine, cursor, item, num,
+                              start_key, start_nkey, end_key, end_nkey);
+    pthread_mutex_unlock(&engine->cache_lock);
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE item_link_cursor(struct default_engine *engine, hash_item *cursor)
+{
+    ENGINE_ERROR_CODE ret;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    ret = do_item_link_cursor(engine, cursor);
+    pthread_mutex_unlock(&engine->cache_lock);
+
+    return ret;
+}
+
+void item_unlink_cursor(struct default_engine *engine, hash_item *cursor)
+{
+    pthread_mutex_lock(&engine->cache_lock);
+    item_unlink_q(engine, cursor);
     pthread_mutex_unlock(&engine->cache_lock);
 }

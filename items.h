@@ -152,4 +152,17 @@ ENGINE_ERROR_CODE add_delta(struct default_engine *engine,
                             hash_item *item, const bool incr,
                             const int64_t delta, uint64_t *cas,
                             uint64_t *result);
+
+ENGINE_ERROR_CODE item_link_cursor(struct default_engine *engine, hash_item *cursor);
+void item_unlink_cursor(struct default_engine *engine, hash_item *cursor);
+
+ENGINE_ERROR_CODE item_walk_cursor(struct default_engine *engine,
+                                   hash_item *cursor,
+                                   item** item,
+                                   size_t *num,
+                                   const void* start_key,
+                                   const int start_nkey,
+                                   const void* end_key,
+                                   const int end_nkey);
+
 #endif
