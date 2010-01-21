@@ -1,6 +1,7 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <string.h>
 #include <pthread.h>
 #include "genhash.h"
@@ -150,15 +151,16 @@ struct tk_context {
     rel_time_t current_time;
 };
 
+#define TK_FMT(name) #name "=%d,"
+#define TK_ARGS(name) item->name,
+
 static void tk_iterfunc(dlist_t *list, void *arg) {
     struct tk_context *c = arg;
     topkey_item_t *item = (topkey_item_t*)list;
-    /* Add create time and access time relative to the current time */
-    append_stat(c->cookie, "ctime", 5, item->key, item->nkey, c->current_time - item->ctime, c->add_stat);
-    append_stat(c->cookie, "atime", 5, item->key, item->nkey, c->current_time - item->atime, c->add_stat);
-#define TK_CUR(name) append_stat(c->cookie, #name, strlen(#name), item->key, item->nkey, item->name, c->add_stat);
-    TK_OPS;
-#undef TK_CUR
+    char val_str[TK_MAX_VAL_LEN];
+    /* This line is magical. The missing comma before item->ctime is because the TK_ARGS macro ends with a comma. */
+    int vlen = snprintf(val_str, sizeof(val_str) - 1, TK_OPS(TK_FMT)"ctime=%"PRIu32",atime=%"PRIu32, TK_OPS(TK_ARGS) item->ctime, item->atime);
+    c->add_stat(item->key, item->nkey, val_str, vlen, c->cookie);
 }
 
 ENGINE_ERROR_CODE topkeys_stats(topkeys_t *tk,

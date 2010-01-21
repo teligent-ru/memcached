@@ -4,16 +4,12 @@
 #include "memcached/engine.h"
 #include "genhash.h"
 
-/* A list of operations for which we have hit and miss stats */
-#define TK_CMDS(C) C(get_hits) C(get_misses) C(cmd_set) C(incr_hits) \
+/* A list of operations for which we have int stats */
+#define TK_OPS(C) C(get_hits) C(get_misses) C(cmd_set) C(incr_hits) \
                    C(incr_misses) C(decr_hits) C(decr_misses) \
                    C(delete_hits) C(delete_misses) C(evictions)
 
-/**
- * Whenever TK_OPS is expanded, the macro TK_CUR will get expanded
- * once for each stat, with the name of the stat as its argument.
- */
-#define TK_OPS TK_CMDS(TK_CUR)
+#define TK_MAX_VAL_LEN 250
 
 /* Update the correct stat for a given operation */
 #define TK(tk, op, key, nkey, ctime) { \
@@ -38,7 +34,7 @@ typedef struct topkey_item {
     int nkey;
     rel_time_t ctime, atime; /* Time this item was created/last accessed */
 #define TK_CUR(name) int name;
-    TK_OPS
+    TK_OPS(TK_CUR)
 #undef TK_CUR
     char key[]; /* A variable length array in the struct itself */
 } topkey_item_t;

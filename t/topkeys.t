@@ -26,13 +26,25 @@ print $sock "set foo 0 0 6\r\nfooval\r\n";
 is(scalar <$sock>, "STORED\r\n", "stored foo");
 mem_get_is($sock, "foo", "fooval");
 
-my $stats = mem_stats($sock, 'topkeys');
+sub parse_stats {
+    my ($stats) = @_;
+    my %ret = ();
+    my $key;
+    foreach $key (keys %$stats) {
+        my %h = split /[,=]/,$stats->{$key};
+        $ret{$key} = \%h;
+    }
+    return \%ret;
+}
 
-is($stats->{'foo.cmd_set'}, '1');
-is($stats->{'foo.get_hits'}, '1');
+
+my $stats = parse_stats(mem_stats($sock, 'topkeys'));
+
+is($stats->{'foo'}->{'cmd_set'}, '1');
+is($stats->{'foo'}->{'get_hits'}, '1');
 
 foreach my $key (qw(get_misses incr_hits incr_misses decr_hits decr_misses delete_hits delete_misses evictions)) {
-    is($stats->{"foo.$key"}, 0, "all stats except cmd_set are zero");
+    is($stats->{'foo'}->{$key}, 0, "all stats except cmd_set are zero");
 }
 
 print $sock "set foo 0 0 6\r\nfooval\r\n";
@@ -41,30 +53,30 @@ print $sock "set bar 0 0 6\r\nbarval\r\n";
 is(scalar <$sock>, "STORED\r\n", "stored bar");
 mem_get_is($sock, "bar", "barval");
 
-$stats = mem_stats($sock, 'topkeys');
+$stats = parse_stats(mem_stats($sock, 'topkeys'));
 
-is($stats->{'foo.cmd_set'}, '2');
-is($stats->{'bar.cmd_set'}, '1');
+is($stats->{'foo'}->{'cmd_set'}, '2');
+is($stats->{'bar'}->{'cmd_set'}, '1');
 
 print $sock "delete foo\r\n";
 is(scalar <$sock>, "DELETED\r\n", "deleted foo");
 
-$stats = mem_stats($sock, 'topkeys');
-is($stats->{"foo.delete_hits"}, 1);
-is($stats->{"foo.delete_misses"}, 0);
-is($stats->{"foo.cmd_set"}, 2);
+$stats = parse_stats(mem_stats($sock, 'topkeys'));
+is($stats->{'foo'}->{'delete_hits'}, 1);
+is($stats->{'foo'}->{'delete_misses'}, 0);
+is($stats->{'foo'}->{'cmd_set'}, 2);
 
 #print $sock "delete foo\r\n";
 #is(scalar <$sock>, "NOT_FOUND\r\n", "shouldn't delete foo again");
 
 sub check_incr_stats {
     my ($key, $ih, $im, $dh, $dm) = @_;
-    my $stats = mem_stats($sock, 'topkeys');
+    my $stats = parse_stats(mem_stats($sock, 'topkeys'));
 
-    is($stats->{"$key.incr_hits"}, $ih);
-    is($stats->{"$key.incr_misses"}, $im);
-    is($stats->{"$key.decr_hits"}, $dh);
-    is($stats->{"$key.decr_misses"}, $dm);
+    is($stats->{$key}->{'incr_hits'}, $ih);
+    is($stats->{$key}->{'incr_misses'}, $im);
+    is($stats->{$key}->{'decr_hits'}, $dh);
+    is($stats->{$key}->{'decr_misses'}, $dm);
 }
 
 print $sock "incr i 1\r\n";
@@ -97,8 +109,8 @@ for ($i = 0; $i < 200; $i++) {
     is(scalar <$sock>, "STORED\r\n", "stored foo$i");
 }
 
-$stats = mem_stats($sock, 'topkeys');
-is($stats->{"foo99.cmd_set"}, undef);
-is($stats->{"foo100.cmd_set"}, 1);
-is($stats->{"foo199.cmd_set"}, 1);
+$stats = parse_stats(mem_stats($sock, 'topkeys'));
+is($stats->{'foo99'}->{'cmd_set'}, undef);
+is($stats->{'foo100'}->{'cmd_set'}, 1);
+is($stats->{'foo199'}->{'cmd_set'}, 1);
 
