@@ -6,12 +6,14 @@
 #include "genhash.h"
 #include "topkeys.h"
 
-static topkey_item_t *topkey_item_init(const void *key, int nkey) {
+static topkey_item_t *topkey_item_init(const void *key, int nkey, rel_time_t ctime) {
     topkey_item_t *item = calloc(sizeof(topkey_item_t) + nkey, 1);
     assert(item);
     assert(key);
     assert(nkey > 0);
     item->nkey = nkey;
+    item->ctime = ctime;
+    item->atime = ctime;
     /* Copy the key into the part trailing the struct */
     memcpy(item->key, key, nkey);
     return item;
@@ -99,10 +101,10 @@ static inline void topkeys_item_delete(topkeys_t *tk, topkey_item_t *item) {
     free(item);
 }
 
-topkey_item_t *topkeys_item_get_or_create(topkeys_t *tk, const void *key, size_t nkey) {
+topkey_item_t *topkeys_item_get_or_create(topkeys_t *tk, const void *key, size_t nkey, const rel_time_t ctime) {
     topkey_item_t *item = genhash_find(tk->hash, key, nkey);
     if (item == NULL) {
-        item = topkey_item_init(key, nkey);
+        item = topkey_item_init(key, nkey, ctime);
         if (item != NULL) {
             if (++tk->nkeys > tk->max_keys) {
                 topkeys_item_delete(tk, topkeys_tail(tk));
@@ -145,11 +147,15 @@ static inline void append_stat(const void *cookie,
 struct tk_context {
     const void *cookie;
     ADD_STAT add_stat;
+    rel_time_t current_time;
 };
 
 static void tk_iterfunc(dlist_t *list, void *arg) {
     struct tk_context *c = arg;
     topkey_item_t *item = (topkey_item_t*)list;
+    /* Add create time and access time relative to the current time */
+    append_stat(c->cookie, "ctime", 5, item->key, item->nkey, c->current_time - item->ctime, c->add_stat);
+    append_stat(c->cookie, "atime", 5, item->key, item->nkey, c->current_time - item->atime, c->add_stat);
 #define TK_CUR(name) append_stat(c->cookie, #name, strlen(#name), item->key, item->nkey, item->name, c->add_stat);
     TK_OPS;
 #undef TK_CUR
@@ -157,10 +163,12 @@ static void tk_iterfunc(dlist_t *list, void *arg) {
 
 ENGINE_ERROR_CODE topkeys_stats(topkeys_t *tk,
                                 const void *cookie,
+                                const rel_time_t current_time,
                                 ADD_STAT add_stat) {
     struct tk_context context;
     context.cookie = cookie;
     context.add_stat = add_stat;
+    context.current_time = current_time;
     assert(tk);
     pthread_mutex_lock(&tk->mutex);
     dlist_iter(&tk->list, tk_iterfunc, &context);

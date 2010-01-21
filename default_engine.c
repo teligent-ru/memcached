@@ -201,7 +201,7 @@ static ENGINE_ERROR_CODE default_item_allocate(ENGINE_HANDLE* handle,
    }
 
    hash_item *it;
-   it = item_alloc(engine, key, nkey, flags, exptime, nbytes);
+   it = item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
 
    if (it != NULL) {
       *item = &it->item;
@@ -261,6 +261,8 @@ static ENGINE_ERROR_CODE default_get_stats(ENGINE_HANDLE* handle,
       add_stat("total_items", 11, val, len, cookie);
       len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.curr_bytes);
       add_stat("bytes", 5, val, len, cookie);
+      len = sprintf(val, "%"PRIu64, (uint64_t)engine->config.maxbytes);
+      add_stat("engine_maxbytes", 15, val, len, cookie);
       pthread_mutex_unlock(&engine->stats.lock);
    } else if (strncmp(stat_key, "slabs", 5) == 0) {
       slabs_stats(engine, add_stat, cookie);
@@ -280,7 +282,8 @@ static ENGINE_ERROR_CODE default_store(ENGINE_HANDLE* handle,
                                        item* item,
                                        uint64_t *cas,
                                        ENGINE_STORE_OPERATION operation) {
-   return store_item(get_handle(handle), get_real_item(item), cas, operation);
+   return store_item(get_handle(handle), get_real_item(item), cas, operation, 
+                     cookie);
 }
 
 static ENGINE_ERROR_CODE default_arithmetic(ENGINE_HANDLE* handle,
@@ -306,13 +309,13 @@ static ENGINE_ERROR_CODE default_arithmetic(ENGINE_HANDLE* handle,
          int len = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
                             (uint64_t)initial);
 
-         item = item_alloc(engine, key, nkey, 0, exptime, len);
+         item = item_alloc(engine, key, nkey, 0, exptime, len, cookie);
          if (item == NULL) {
             return ENGINE_ENOMEM;
          }
          memcpy((void*)item_get_data(&item->item), buffer, len);
          if ((ret = store_item(engine, item, cas,
-                               OPERATION_ADD)) == ENGINE_KEY_EEXISTS) {
+                               OPERATION_ADD, cookie)) == ENGINE_KEY_EEXISTS) {
             item_release(engine, item);
             return default_arithmetic(handle, cookie, key, nkey, increment,
                                       create, delta, initial, exptime, cas,
@@ -324,7 +327,7 @@ static ENGINE_ERROR_CODE default_arithmetic(ENGINE_HANDLE* handle,
          item_release(engine, item);
       }
    } else {
-      ret = add_delta(engine, item, increment, delta, cas, result);
+      ret = add_delta(engine, item, increment, delta, cas, result, cookie);
       item_release(engine, item);
    }
 

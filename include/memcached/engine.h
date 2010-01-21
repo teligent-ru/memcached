@@ -261,6 +261,13 @@ extern "C" {
         void *(*new_stats)(void);
         void (*release_stats)(void*);
 
+        /**
+         * Tell the server we've evicted an item.
+         */
+        void (*count_eviction)(const void *cookie, 
+                               const void *key,
+                               int nkey);
+
     } SERVER_HANDLE_V1;
 
     typedef void* (*GET_SERVER_API)(int interface);

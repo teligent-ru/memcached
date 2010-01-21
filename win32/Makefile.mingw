@@ -25,11 +25,11 @@ GENFILES=.libs/config_version.h
 memcached.exe: ${OBJDIR} ${GENFILES} $(MEMCACHED_OBJS)
 	${LINK.c} -o memcached.exe $(MEMCACHED_OBJS) \
                   -L${GENHASH_DIR} -L/lib -lgenhash -levent -lmswsock \
-                  -lws2_32 -lpthreadGC2
+                  -lws2_32 -lpthread
 
 .libs/default_engine.so: ${OBJDIR} $(DEFAULT_ENGINE_OBJS)
 	${LINK.c} -o $@ -shared ${DEFAULT_ENGINE_OBJS} \
-                  -L/lib -lpthreadGC2
+                  -L/lib -lpthread
 
 .libs/config_version.h:
 	./win32/config.sh
@@ -43,5 +43,33 @@ clean:
 	$(RM) ${MEMCACHED_OBJS} ${DEFAULT_ENGINE_OBJS} \
               ${BINARIES} ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d} \
               ${GENFILES}
+              
+bdist: ${BINARIES}
+	rm -rf memcached_win32
+	mkdir memcached_win32
+	cp memcached.exe memcached_win32
+	cp .libs/default_engine.so memcached_win32
+	cp win32/pthreadGC2.dll memcached_win32
+	tar -czvf memcached_win32-`git describe`.tar.gz memcached_win32
+	rm -rf memcached_win32
+
+zdist: ${BINARIES} 
+	rm -rf memcached_win32
+	mkdir memcached_win32
+	cp memcached.exe memcached_win32
+	cp .libs/default_engine.so memcached_win32
+	cp win32/pthreadGC2.dll memcached_win32
+	zip -r memcached-win32-`git describe`.zip memcached_win32
+	rm -rf memcached_win32
+
+zdistdos: ${BINARIES}
+	del /F memcached_win32
+	mkdir memcached_win32
+	copy /Y memcached.exe memcached_win32
+	copy /Y .libs\default_engine.so memcached_win32
+	copy /Y win32\pthreadGC2.dll memcached_win32
+	zip -r memcached_win32-`git describe`.zip memcached_win32
+	del /F memcached_win32
+
 
 -include ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d}

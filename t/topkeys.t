@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 251;
+use Test::More tests => 252;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -13,7 +13,8 @@ print $sock "stats topkeys\r\n";
 
 is(scalar <$sock>, "ERROR\r\n", "No topkeys without command line option.");
 
-$server = new_memcached('-o 100');
+$ENV{"MEMCACHED_TOP_KEYS"} = "100";
+$server = new_memcached();
 $sock = $server->sock;
 
 print $sock "stats topkeys\r\n";
@@ -30,7 +31,7 @@ my $stats = mem_stats($sock, 'topkeys');
 is($stats->{'foo.cmd_set'}, '1');
 is($stats->{'foo.get_hits'}, '1');
 
-foreach my $key (qw(get_misses incr_hits incr_misses decr_hits decr_misses delete_hits delete_misses)) {
+foreach my $key (qw(get_misses incr_hits incr_misses decr_hits decr_misses delete_hits delete_misses evictions)) {
     is($stats->{"foo.$key"}, 0, "all stats except cmd_set are zero");
 }
 

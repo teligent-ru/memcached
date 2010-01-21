@@ -287,7 +287,7 @@ AC_CACHE_CHECK([for genhash directory], ac_cv_genhash_dir, [
   gh_found=no
   for ghdir in $trygenhashdir "" $prefix /usr/local ; do
     LDFLAGS="$saved_LDFLAGS"
-    LIBS="$saved_LIBS -lgenhash"
+    LIBS="$saved_LIBS -lgenhash -lm"
 
     # Skip the directory if it isn't there.
     if test ! -z "$ghdir" -a ! -d "$ghdir" ; then
@@ -330,7 +330,7 @@ AC_CACHE_CHECK([for genhash directory], ac_cv_genhash_dir, [
 ])
   fi
 ])
-LIBS="$LIBS -lgenhash"
+LIBS="$LIBS -lgenhash -lm"
 if test $ac_cv_genhash_dir != "(system)"; then
   if test -d "$ac_cv_genhash_dir/lib" ; then
     LDFLAGS="-L$ac_cv_genhash_dir/lib $LDFLAGS"
