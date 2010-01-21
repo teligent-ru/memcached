@@ -81,10 +81,14 @@ extern "C" {
         ON_CONNECT     = 0,     /**< A new connection was established. */
         ON_DISCONNECT  = 1,     /**< A connection was terminated. */
         ON_AUTH        = 2,     /**< A connection was authenticated. */
-        ON_SWITCH_CONN = 3      /**< Processing a different connection on this thread. */
+        ON_SWITCH_CONN = 3,     /**< Processing a different connection on this thread. */
+        ON_OBSERVER_CONNECT = 4,
+        ON_MUTATION    = 5,     /**< The object was modified */
+        ON_DELETE      = 6,     /**< The object was deleted */
+        ON_TAP_QUEUE   = 7      /** < Changes to the tap queue */
     } ENGINE_EVENT_TYPE;
 
-    #define MAX_ENGINE_EVENT_TYPE 3
+    #define MAX_ENGINE_EVENT_TYPE 7
 
     /**
      * Time relative to server start. Smaller than time_t on 64-bit systems.
@@ -180,6 +184,10 @@ extern "C" {
                                   EVENT_CALLBACK cb,
                                   const void *cb_data);
 
+        void (*perform_callbacks)(ENGINE_EVENT_TYPE type,
+                                 const void *data,
+                                 const void *cookie);
+
         /**
          * Get the auth data for the connection associated with the
          * given cookie.
@@ -260,10 +268,26 @@ extern "C" {
          */
         void *(*new_stats)(void);
         void (*release_stats)(void*);
-
     } SERVER_HANDLE_V1;
 
     typedef void* (*GET_SERVER_API)(int interface);
+
+
+    struct item_observer_cb_data {
+        const void *key; /* THis isn't going to work from a memory management perspective */
+        size_t nkey;
+    };
+
+    struct observer_walker_item {
+        int event;
+        union {
+            struct item_observer_cb_data key;
+            item *itm;
+        } data;
+    };
+
+    typedef struct observer_walker_item (*TAP_WALKER)(ENGINE_HANDLE* handle, const void *cookie);
+
 
     /**
      * The signature for the "create_instance" function exported from the module.
@@ -536,6 +560,9 @@ extern "C" {
                                              const void* cookie,
                                              protocol_binary_request_header *request,
                                              ADD_RESPONSE response);
+
+        TAP_WALKER (*get_tap_walker)(ENGINE_HANDLE* handle, const void* cookie);
+
 
         /*
          * It is up to the engine writers how to store the data in the engine
