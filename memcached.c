@@ -2046,6 +2046,7 @@ static void ship_tap_log(conn *c) {
     item *it;
     uint32_t bodylen;
     int ii = 0;
+    c->icurr = c->ilist;
     do {
         /* @todo fixme! */
         if (ii++ == 10) {
@@ -2175,6 +2176,22 @@ static void process_bin_tap_connect(conn *c) {
         c->tap_walker = walker;
         register_callback(ON_TAP_QUEUE, feed_tap_queue, c);
         conn_set_state(c, conn_ship_log);
+
+        /* Trond:
+         * Ok, so this is really really experimental... Let's move this connection
+         * to another libevent instance ;-)
+         */
+        c->ewouldblock = true;
+        event_del(&c->event);
+        c->thread = &tap_thread;
+        c->event.ev_base = tap_thread.base;
+        pthread_mutex_lock(&tap_thread.mutex);
+        c->next = tap_thread.pending_io;
+        tap_thread.pending_io = c;
+        pthread_mutex_unlock(&tap_thread.mutex);
+        if (write(tap_thread.notify_send_fd, "", 1) != 1) {
+            perror("Writing to tap thread notify pipe");
+        }
     }
 }
 
