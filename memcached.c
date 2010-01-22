@@ -211,6 +211,7 @@ static conn *listen_conn = NULL;
 static struct event_base *main_base;
 static struct independent_stats *default_independent_stats;
 
+pthread_mutex_t event_handler_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
 
 enum transmit_result {
@@ -229,10 +230,12 @@ static enum transmit_result transmit(conn *c);
 static void perform_callbacks(ENGINE_EVENT_TYPE type,
                               const void *data,
                               const void *c) {
+    pthread_mutex_lock(&event_handler_mutex);
     for (struct engine_event_handler *h = engine_event_handlers[type];
          h; h = h->next) {
         h->cb(c, type, data, h->cb_data);
     }
+    pthread_mutex_unlock(&event_handler_mutex);
 }
 
 /*
@@ -5040,12 +5043,13 @@ static void register_callback(ENGINE_EVENT_TYPE type,
     struct engine_event_handler *h =
         calloc(sizeof(struct engine_event_handler), 1);
 
-    /* TROND!!! THIS IS NOT MT-SAFE? */
     assert(h);
+    pthread_mutex_lock(&event_handler_mutex);
     h->cb = cb;
     h->cb_data = cb_data;
     h->next = engine_event_handlers[type];
     engine_event_handlers[type] = h;
+    pthread_mutex_unlock(&event_handler_mutex);
 }
 
 static rel_time_t get_current_time(void)
