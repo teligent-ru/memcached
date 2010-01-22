@@ -205,8 +205,9 @@ int sasl_server_start(sasl_conn_t *conn,
         assert(pwlen > 0);
         password[pwlen] = '\0';
         memcpy(password, clientin + 2 + strlen(username), pwlen);
-        fprintf(stderr, "username:  ``%s'' (%d), password=``%s'' (%d)\n",
-                username, (int)strlen(username), password, pwlen);
+
+        // fprintf(stderr, "username:  ``%s'' (%d), password=``%s'' (%d)\n",
+        //        username, (int)strlen(username), password, pwlen);
 
         if (check_up(username, password)) {
             if (conn->username) {
