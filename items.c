@@ -165,7 +165,7 @@ hash_item *do_item_alloc(struct default_engine *engine,
                     pthread_mutex_lock(&engine->stats.lock);
                     engine->stats.evictions++;
                     pthread_mutex_unlock(&engine->stats.lock);
-                    engine->server.count_eviction(cookie, 
+                    engine->server.count_eviction(cookie,
                                                   item_get_key(&search->item),
                                                   search->item.nkey);
                 }
@@ -787,7 +787,7 @@ ENGINE_ERROR_CODE add_delta(struct default_engine *engine,
  */
 ENGINE_ERROR_CODE store_item(struct default_engine *engine,
                              hash_item *item, uint64_t *cas,
-                             ENGINE_STORE_OPERATION operation, 
+                             ENGINE_STORE_OPERATION operation,
                              const void *cookie) {
     ENGINE_ERROR_CODE ret;
 

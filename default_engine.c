@@ -282,7 +282,7 @@ static ENGINE_ERROR_CODE default_store(ENGINE_HANDLE* handle,
                                        item* item,
                                        uint64_t *cas,
                                        ENGINE_STORE_OPERATION operation) {
-   return store_item(get_handle(handle), get_real_item(item), cas, operation, 
+   return store_item(get_handle(handle), get_real_item(item), cas, operation,
                      cookie);
 }
 
