@@ -134,7 +134,6 @@ sub free_port {
                                       Proto     => $type,
                                       ReuseAddr => 1);
     }
-    print STDERR "returning port: $port\n";
 
     return $port;
 }
@@ -182,7 +181,6 @@ sub new_memcached {
 	my $conn = IO::Socket::UNIX->new(Peer => $filename) || 
 	    croak("Failed to connect to unix domain socket: $! '$filename'");
 
-	print STDERR "trying to create a socket...\n";
 	return Memcached::Handle->new(pid  => $childpid,
 				      conn => $conn,
 				      domainsocket => $filename,
@@ -192,7 +190,6 @@ sub new_memcached {
     # try to connect / find open port, only if we're not using unix domain
     # sockets
 
-	print STDERR "trying to connect to a socket in a loop\n";
     for (1..20) {
 	my $conn = IO::Socket::INET->new(PeerAddr => "127.0.0.1:$port");
 	if ($conn) {
