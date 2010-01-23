@@ -2146,15 +2146,17 @@ static void feed_tap_queue(const void *cookie,
 {
     conn *feed = (void*)cb_data;
     conn *caller = (void*)cb_data;
+    assert(feed);
+    assert(caller);
 
     if (caller->thread != feed->thread) {
-        pthread_mutex_lock(&feed->thread->mutex);
+        LOCK_THREAD(feed->thread);
     }
 
     notify_io_complete(feed, ENGINE_SUCCESS);
 
     if (caller->thread != feed->thread) {
-        pthread_mutex_unlock(&feed->thread->mutex);
+        UNLOCK_THREAD(feed->thread);
     }
 }
 
@@ -4080,13 +4082,13 @@ void drive_machine(conn *c) {
 
         case conn_ship_log:
             c->ewouldblock = false;
-            pthread_mutex_lock(&c->thread->mutex);
+            LOCK_THREAD(c->thread);
             ship_tap_log(c);
             if (c->ewouldblock) {
                 event_del(&c->event);
                 stop = 1;
             }
-            pthread_mutex_unlock(&c->thread->mutex);
+            UNLOCK_THREAD(c->thread);
             break;
 
         case conn_waiting:
@@ -4157,13 +4159,13 @@ void drive_machine(conn *c) {
         case conn_nread:
             if (c->rlbytes == 0) {
                 c->ewouldblock = false;
-                pthread_mutex_lock(&c->thread->mutex);
+                LOCK_THREAD(c->thread);
                 complete_nread(c);
                 if (c->ewouldblock) {
                     event_del(&c->event);
                     stop = 1;
                 }
-                pthread_mutex_unlock(&c->thread->mutex);
+                UNLOCK_THREAD(c->thread);
                 break;
             }
             /* first check if we have leftovers in the conn_read buffer */
