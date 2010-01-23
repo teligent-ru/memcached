@@ -278,15 +278,7 @@ extern "C" {
         size_t nkey;
     };
 
-    struct observer_walker_item {
-        int event;
-        union {
-            struct item_observer_cb_data key;
-            item *itm;
-        } data;
-    };
-
-    typedef struct observer_walker_item (*TAP_WALKER)(ENGINE_HANDLE* handle, const void *cookie);
+    typedef int (*TAP_WALKER)(ENGINE_HANDLE* handle, const void *cookie, item **item);
 
 
     /**

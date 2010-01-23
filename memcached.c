@@ -2026,7 +2026,6 @@ static void ship_tap_log(conn *c) {
     }
     c->wcurr = c->wbuf;
 
-    struct observer_walker_item next;
     bool more_data = true;
     bool send_data = false;
 
@@ -2043,6 +2042,11 @@ static void ship_tap_log(conn *c) {
         .message.header.request.opcode = (uint8_t)PROTOCOL_BINARY_CMD_TAP_DELETE
     };
 
+    static protocol_binary_request_tap_flush flush = {
+        .message.header.request.magic = (uint8_t)PROTOCOL_BINARY_REQ,
+        .message.header.request.opcode = (uint8_t)PROTOCOL_BINARY_CMD_TAP_FLUSH
+    };
+
     item *it;
     uint32_t bodylen;
     int ii = 0;
@@ -2053,15 +2057,15 @@ static void ship_tap_log(conn *c) {
             break;
         }
 
-        next = c->tap_walker(settings.engine.v0, c);
-        switch (next.event) {
+        int event = c->tap_walker(settings.engine.v0, c, &it);
+        switch (event) {
         case 0 :
             more_data = false;
             break;
         case 1:
             /* This is a store */
             send_data = true;
-            it = c->ilist[c->ileft++] = next.data.itm;
+            c->ilist[c->ileft++] = it;
 
             mutation.message.header.request.cas = htonll(settings.engine.v1->item_get_cas(it));
             mutation.message.header.request.keylen = htons(it->nkey);
@@ -2081,18 +2085,27 @@ static void ship_tap_log(conn *c) {
 
         case 2:
             /* This is a delete */
-            delete.message.header.request.keylen = htons(next.data.key.nkey);
-            delete.message.header.request.bodylen = htonl(next.data.key.nkey);
-            memcpy(c->wcurr, mutation.bytes, sizeof(mutation.bytes));
-            memcpy(c->wcurr + sizeof(delete.bytes), next.data.key.key, next.data.key.nkey);
-            add_iov(c, c->wcurr, sizeof(delete.bytes) + next.data.key.nkey);
-            c->wbytes += sizeof(delete.bytes) + next.data.key.nkey;
-            c->wcurr += sizeof(delete.bytes) + next.data.key.nkey;
+            send_data = true;
+            c->ilist[c->ileft++] = it;
+            delete.message.header.request.keylen = htons(it->nkey);
+            delete.message.header.request.bodylen = htonl(it->nkey);
+            memcpy(c->wcurr, delete.bytes, sizeof(delete.bytes));
+            add_iov(c, c->wcurr, sizeof(delete.bytes));
+            c->wcurr += sizeof(delete.bytes);
+            c->wbytes += sizeof(delete.bytes);
+            add_iov(c, settings.engine.v1->item_get_key(it), it->nkey);
+            break;
+
+        case 3:
+            send_data = true;
+            memcpy(c->wcurr, flush.bytes, sizeof(flush.bytes));
+            add_iov(c, c->wcurr, sizeof(flush.bytes));
+            c->wcurr += sizeof(flush.bytes);
+            c->wbytes += sizeof(flush.bytes);
             break;
 
         default:
-            /** FOO */
-            ;
+            abort();
         }
     } while (more_data);
 
@@ -2274,6 +2287,8 @@ static void process_bin_tap_delete(conn *c) {
     } else {
         fprintf(stderr, "Replicate not found\n");
     }
+    /* @todo we don't do acks at this time */
+    conn_set_state(c, conn_new_cmd);
 }
 
 static void process_bin_tap_flush(conn *c) {
