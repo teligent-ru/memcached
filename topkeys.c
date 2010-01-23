@@ -159,7 +159,8 @@ static void tk_iterfunc(dlist_t *list, void *arg) {
     topkey_item_t *item = (topkey_item_t*)list;
     char val_str[TK_MAX_VAL_LEN];
     /* This line is magical. The missing comma before item->ctime is because the TK_ARGS macro ends with a comma. */
-    int vlen = snprintf(val_str, sizeof(val_str) - 1, TK_OPS(TK_FMT)"ctime=%"PRIu32",atime=%"PRIu32, TK_OPS(TK_ARGS) item->ctime, item->atime);
+    int vlen = snprintf(val_str, sizeof(val_str) - 1, TK_OPS(TK_FMT)"ctime=%"PRIu32",atime=%"PRIu32, TK_OPS(TK_ARGS)
+                        c->current_time - item->ctime, c->current_time - item->atime);
     c->add_stat(item->key, item->nkey, val_str, vlen, c->cookie);
 }
 
