@@ -100,6 +100,13 @@ static int load_user_db(void)
         return SASL_NOMEM;
     }
 
+    // File may have comment lines that must being with '#'.
+    // Otherwise, lines should be newline terminated, and look like...
+    //   <NAME><whitespace><PASSWORD><optional_whitespace>
+    // or...
+    //   <NAME><optional_whitespace>
+    // The last signifies an empty PASSWORD string.
+    //
     char up[128];
     while (fgets(up, sizeof(up), sfile)) {
         if (up[0] != '#') {
@@ -108,12 +115,14 @@ static int load_user_db(void)
             while (*p && !isspace(p[0])) {
                 p++;
             }
-            p[0] = '\0';
-            p++;
-            while (isspace(*p)) {
-                p++;
-            }
             if (p[0] != '\0') {
+                p[0] = '\0';
+                p++;
+                while (*p && isspace(*p)) {
+                    p++;
+                }
+            }
+            if (strlen(uname) > 0) {
                 store_pw(new_ut, uname, p);
             }
         }
