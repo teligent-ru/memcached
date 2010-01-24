@@ -43,7 +43,7 @@ clean:
 	$(RM) ${MEMCACHED_OBJS} ${DEFAULT_ENGINE_OBJS} \
               ${BINARIES} ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d} \
               ${GENFILES}
-              
+
 bdist: ${BINARIES}
 	rm -rf memcached_win32
 	mkdir memcached_win32
@@ -53,13 +53,13 @@ bdist: ${BINARIES}
 	tar -czvf memcached_win32-`git describe`.tar.gz memcached_win32
 	rm -rf memcached_win32
 
-zdist: ${BINARIES} 
+zdist: ${BINARIES}
 	rm -rf memcached_win32
 	mkdir memcached_win32
 	cp memcached.exe memcached_win32
 	cp .libs/default_engine.so memcached_win32
 	cp win32/pthreadGC2.dll memcached_win32
-	zip -r memcached-win32-`git describe`.zip memcached_win32
+	zip -r memcached_win32-`git describe`.zip memcached_win32
 	rm -rf memcached_win32
 
 zdistdos: ${BINARIES}
@@ -70,6 +70,5 @@ zdistdos: ${BINARIES}
 	copy /Y win32\pthreadGC2.dll memcached_win32
 	zip -r memcached_win32-`git describe`.zip memcached_win32
 	del /F memcached_win32
-
 
 -include ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d}
