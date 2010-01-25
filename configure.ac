@@ -263,6 +263,13 @@ if test $ac_cv_libevent_dir != "(system)"; then
   fi
 fi
 
+AC_SEARCH_LIBS(socket, socket)
+AC_SEARCH_LIBS(gethostbyname, nsl)
+AC_SEARCH_LIBS(umem_cache_create, umem)
+AC_SEARCH_LIBS(gethugepagesizes, hugetlbfs)
+AC_SEARCH_LIBS(dlopen, dl)
+AC_SEARCH_LIBS(log, m)
+
 dnl ----------------------------------------------------------------------------
 
 trygenhashdir=""
@@ -347,11 +354,6 @@ if test $ac_cv_genhash_dir != "(system)"; then
 fi
 
 dnl ----------------------------------------------------------------------------
-AC_SEARCH_LIBS(socket, socket)
-AC_SEARCH_LIBS(gethostbyname, nsl)
-AC_SEARCH_LIBS(umem_cache_create, umem)
-AC_SEARCH_LIBS(gethugepagesizes, hugetlbfs)
-AC_SEARCH_LIBS(dlopen, dl)
 AC_CHECK_HEADERS(link.h dlfcn.h)
 AC_HEADER_STDBOOL
 AH_BOTTOM([#if HAVE_STDBOOL_H
