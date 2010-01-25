@@ -2227,7 +2227,8 @@ static void process_bin_tap_mutation(conn *c) {
     assert(c != NULL);
     char *packet = (c->rcurr - (c->binary_header.request.bodylen +
                                 sizeof(c->binary_header)));
-    protocol_binary_request_tap_mutation *req = (void*)c->rcurr;
+    protocol_binary_request_tap_mutation *req = (void*)packet;
+    assert(req->message.header.request.extlen == 8);
     /* fix byteorder in the request */
     req->message.body.expiration = ntohl(req->message.body.expiration);
 
