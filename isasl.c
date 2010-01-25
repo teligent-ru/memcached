@@ -204,12 +204,13 @@ int sasl_server_start(sasl_conn_t *conn,
     *serveroutlen = 0;
 
     if(strcmp(mech, "PLAIN") == 0) {
-        // 256 is an arbitrary ``large enough'' number.
+        // 128 is an arbitrary ``large enough'' number.
+        // The clientin string looks like "\0username\0password"
         if (clientinlen > 2 && clientinlen < 128 && clientin[0] == '\0') {
             const char *username = clientin + 1;
             char password[128];
             int pwlen = clientinlen - 2 - strlen(username);
-            if (pwlen > 0) {
+            if (pwlen >= 0) {
                 password[pwlen] = '\0';
                 memcpy(password, clientin + 2 + strlen(username), pwlen);
 
