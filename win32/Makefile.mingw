@@ -50,3 +50,12 @@ clean:
 
 test: ${TESTAPP_OBJ} prep
 	${TESTAPP_OBJ}
+  
+bdist: ${BINARIES}
+	rm -rf bucket_engine_win32
+	mkdir bucket_engine_win32
+	cp *.exe bucket_engine_win32
+	cp .libs/*.so bucket_engine_win32
+	cp win32/pthreadGC2.dll bucket_engine_win32
+	tar -czvf bucket_engine_win32-`git describe`.tar.gz bucket_engine_win32
+	rm -rf bucket_engine_win32
