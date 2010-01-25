@@ -49,7 +49,6 @@ memcached_CFLAGS = @PROFILER_FLAGS@
 memcached_DEPENDENCIES = libconfig.la libutil.la
 CLEANFILES=
 
-
 if BUILD_DTRACE
 BUILT_SOURCES += memcached_dtrace.h
 CLEANFILES += memcached_dtrace.h
@@ -128,10 +127,6 @@ dist-hook:
 TMP_DIR=./tmp
 
 TMP_VER=$(TMP_DIR)/version_num.tmp
-
-.PHONY: bin version
-
-all: bdist
 
 version:
 	test -d $(TMP_DIR) || mkdir $(TMP_DIR)
