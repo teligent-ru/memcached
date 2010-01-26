@@ -85,12 +85,12 @@ static void free_user_ht(void)
     }
 }
 
-static const char *get_isasl_filename()
+static const char *get_isasl_filename(void)
 {
     return getenv("ISASL_PWFILE");
 }
 
-static int load_user_db()
+static int load_user_db(void)
 {
     const char *filename = get_isasl_filename();
     if (!filename) {
@@ -159,7 +159,7 @@ void sasl_dispose(sasl_conn_t **pconn)
     *pconn = NULL;
 }
 
-static bool isasl_is_fresh()
+static bool isasl_is_fresh(void)
 {
     bool rv = false;
     struct stat st;
