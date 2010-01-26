@@ -69,6 +69,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <inttypes.h>
+#include <sys/utsname.h>
 
 /* The item must always be called "it" */
 #define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
@@ -138,6 +139,8 @@
     thread_stats->op += amt; \
     pthread_mutex_unlock(&thread_stats->mutex); \
 }
+
+static char *nodeid;
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -594,7 +597,7 @@ static void conn_cleanup(conn *c) {
     }
 
     c->engine_storage = NULL;
-    c->tap_walker = NULL;
+    c->tap_iterator = NULL;
 }
 
 /*
@@ -2007,6 +2010,14 @@ static void send_tap_connect(conn *c) {
         .message.header.request.opcode = (uint8_t)PROTOCOL_BINARY_CMD_TAP_CONNECT
     };
 
+    size_t nodelen = 0;
+    size_t headersize = sizeof(msg.message.header) + msg.message.header.request.extlen;
+    if (nodeid != NULL) {
+        nodelen = strlen(nodeid);
+        msg.message.header.request.keylen = htons(nodelen);
+        msg.message.header.request.bodylen = htonl(nodelen + msg.message.header.request.extlen);
+    }
+
     c->msgcurr = 0;
     c->msgused = 0;
     c->iovused = 0;
@@ -2019,9 +2030,13 @@ static void send_tap_connect(conn *c) {
     }
 
     c->wcurr = c->wbuf;
-    memcpy(c->wcurr, msg.bytes, sizeof(msg.bytes));
-    c->wbytes = sizeof(msg.bytes);
+    memcpy(c->wcurr, msg.bytes, headersize);
+    c->wbytes = headersize;
 
+    if (nodeid != NULL) {
+        memcpy(c->wcurr + headersize, nodeid, nodelen);
+        c->wbytes += nodelen;
+    }
     conn_set_state(c, conn_write);
     c->write_and_go = conn_new_cmd;
 }
@@ -2070,7 +2085,7 @@ static void ship_tap_log(conn *c) {
             break;
         }
 
-        int event = c->tap_walker(settings.engine.v0, c, &it);
+        int event = c->tap_iterator(settings.engine.v0, c, &it);
         switch (event) {
         case 0 :
             more_data = false;
@@ -2195,13 +2210,29 @@ static void process_bin_tap_connect(conn *c) {
      * command the slave could feed to the master (sending key + cas), and the
      * master could put in delete messages in the feed...
      */
-    TAP_WALKER walker = settings.engine.v1->get_tap_walker(settings.engine.v0, c);
-    if (walker == NULL) {
+
+    char *packet = (c->rcurr - (c->binary_header.request.bodylen +
+                                sizeof(c->binary_header)));
+    protocol_binary_request_tap_connect *req = (void*)packet;
+    const char *key = packet + sizeof(req->bytes);
+    const char *data = key + c->binary_header.request.keylen;
+    uint32_t flags = 0;
+
+    if (c->binary_header.request.extlen == 4) {
+        flags = ntohl(req->message.body.flags);
+    } else {
+        data -= 4;
+        key -= 4;
+    }
+
+    TAP_ITERATOR iterator = settings.engine.v1->get_tap_iterator(settings.engine.v0, c, key, c->binary_header.request.keylen, flags, data, c->binary_header.request.bodylen - sizeof(req->bytes) - c->binary_header.request.keylen);
+
+    if (iterator == NULL) {
         /* TROND: SEND A NAK TO THE TAP */
         fprintf(stderr, "FATAL: The engine doesn't support tap\n");
         conn_set_state(c, conn_closing);
     } else {
-        c->tap_walker = walker;
+        c->tap_iterator = iterator;
         register_callback(ON_TAP_QUEUE, feed_tap_queue, c);
         conn_set_state(c, conn_ship_log);
 
@@ -5756,6 +5787,16 @@ int main (int argc, char **argv) {
     }
 
     if (overlord) {
+        struct utsname utsname;
+        if (uname(&utsname) == 0) {
+            char port[12];
+            snprintf(port, sizeof(port), ":%u", settings.port);
+            nodeid = malloc(strlen(utsname.nodename) + strlen(port) + 1);
+            if (nodeid) {
+                sprintf(nodeid, "%s%s", utsname.nodename, port);
+            }
+        }
+
         if (remote_connection(overlord, conn_create_tap_connect) == -1) {
             fprintf(stderr, "Failed to start replication\n");
         }

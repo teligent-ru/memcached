@@ -278,7 +278,7 @@ extern "C" {
         size_t nkey;
     };
 
-    typedef int (*TAP_WALKER)(ENGINE_HANDLE* handle, const void *cookie, item **item);
+    typedef int (*TAP_ITERATOR)(ENGINE_HANDLE* handle, const void *cookie, item **item);
 
 
     /**
@@ -553,7 +553,21 @@ extern "C" {
                                              protocol_binary_request_header *request,
                                              ADD_RESPONSE response);
 
-        TAP_WALKER (*get_tap_walker)(ENGINE_HANDLE* handle, const void* cookie);
+        /**
+         * Get (or create) a Tap iterator for this connection.
+         * @param handle the engine handle
+         * @param cookie The connection cookie
+         * @param client The "name" of the client
+         * @param nclient The number of bytes in the client name
+         * @param flags Tap connection flags
+         * @param userdata Specific userdata the engine may know how to use
+         * @param nuserdata The size of the userdata
+         * @return a tap iterator to iterate through the event stream
+         */
+        TAP_ITERATOR (*get_tap_iterator)(ENGINE_HANDLE* handle, const void* cookie,
+                                         const void* client, size_t nclient,
+                                         uint32_t flags,
+                                         const void* userdata, size_t nuserdata);
 
 
         /*

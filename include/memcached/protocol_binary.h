@@ -438,7 +438,16 @@ extern "C"
      * See To be written
      *
      */
-    typedef protocol_binary_request_no_extras protocol_binary_request_tap_connect;
+    typedef union {
+        struct {
+            protocol_binary_request_header header;
+            struct {
+                uint32_t flags;
+            } body;
+        } message;
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 4];
+    } protocol_binary_request_tap_connect;
+
     typedef protocol_binary_request_set protocol_binary_request_tap_mutation;
     typedef protocol_binary_request_delete protocol_binary_request_tap_delete;
     typedef protocol_binary_request_no_extras protocol_binary_request_tap_flush;

@@ -396,7 +396,7 @@ struct conn {
 
     ENGINE_ERROR_CODE aiostat;
     bool ewouldblock;
-    TAP_WALKER tap_walker; /* Walker */
+    TAP_ITERATOR tap_iterator;
 };
 
 /*
