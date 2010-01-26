@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 73;
+use Test::More tests => 74;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -37,7 +37,7 @@ my $sock = $server->sock;
 my $stats = mem_stats($sock);
 
 # Test number of keys
-is(scalar(keys(%$stats)), 35, "35 stats values");
+is(scalar(keys(%$stats)), 37, "37 stats values");
 
 # Test initial state
 foreach my $key (qw(curr_items total_items bytes cmd_get cmd_set get_hits evictions get_misses bytes_written)) {
@@ -51,6 +51,8 @@ is(scalar <$sock>, "STORED\r\n", "stored foo");
 mem_get_is($sock, "foo", "fooval");
 
 my $stats = mem_stats($sock);
+
+is($stats->{'engine_maxbytes'}, 64<<20, "engine_maxbytes is " .. 64<<20);
 
 foreach my $key (qw(total_items curr_items cmd_get cmd_set get_hits)) {
     is($stats->{$key}, 1, "after one set/one get $key is 1");

@@ -1,7 +1,8 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 305;
+#use Test::More tests => 305;
+use Test::More;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -9,6 +10,17 @@ use MemcachedTest;
 # assuming max slab is 1M and default mem is 64M
 my $server = new_memcached();
 my $sock = $server->sock;
+
+# Skip this test on 32 bit due to bug 118, to re-enable this test
+# comment out the the mem_stat and if block below and uncomment
+# the Test::More test => 305 above
+my $stats = mem_stats($sock);
+if ($stats->{'pointer_size'} eq "32") {
+    plan skip_all => 'Skipping LRU on 32-bit build (See bug 118 in bugzilla)';
+    exit 0;
+} else {
+    plan tests => 305;
+}
 
 # create a big value for the largest slab
 my $max = 1024 * 1024;

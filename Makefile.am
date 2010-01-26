@@ -49,7 +49,6 @@ memcached_CFLAGS = @PROFILER_FLAGS@
 memcached_DEPENDENCIES = libconfig.la libutil.la
 CLEANFILES=
 
-
 if BUILD_DTRACE
 BUILT_SOURCES += memcached_dtrace.h
 CLEANFILES += memcached_dtrace.h
@@ -124,3 +123,22 @@ docs:
 
 dist-hook:
 	rm -f $(distdir)/*/*~ $(distdir)/t/lib/*~ $(distdir)/*~
+
+TMP_DIR=./tmp
+
+TMP_VER=$(TMP_DIR)/version_num.tmp
+
+version:
+	test -d $(TMP_DIR) || mkdir $(TMP_DIR)
+	git describe | sed s/-/_/g > $(TMP_VER)
+
+bdist: version
+	rm -f ./memcached_*.tar.gz
+	rm -rf $(TMP_DIR)/memcached
+	mkdir $(TMP_DIR)/memcached
+	cp memcached $(TMP_DIR)/memcached
+	cp .libs/default_engine.so $(TMP_DIR)/memcached
+	tar --directory $(TMP_DIR) -czf memcached_`cat $(TMP_VER)`-`uname -s`.`uname -m`.tar.gz memcached
+	echo created memcached_`cat $(TMP_VER)`-`uname -s`.`uname -m`.tar.gz
+
+

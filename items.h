@@ -43,7 +43,7 @@ struct items {
  */
 hash_item *item_alloc(struct default_engine *engine,
                       const void *key, size_t nkey, int flags,
-                      rel_time_t exptime, int nbytes);
+                      rel_time_t exptime, int nbytes, const void *cookie);
 
 /**
  * Get an item from the cache
@@ -133,7 +133,8 @@ void item_unlink(struct default_engine *engine, hash_item *it);
 ENGINE_ERROR_CODE store_item(struct default_engine *engine,
                              hash_item *item,
                              uint64_t *cas,
-                             ENGINE_STORE_OPERATION operation);
+                             ENGINE_STORE_OPERATION operation,
+                             const void *cookie);
 
 /**
  * Add a delta to an item
@@ -151,5 +152,5 @@ ENGINE_ERROR_CODE store_item(struct default_engine *engine,
 ENGINE_ERROR_CODE add_delta(struct default_engine *engine,
                             hash_item *item, const bool incr,
                             const int64_t delta, uint64_t *cas,
-                            uint64_t *result);
+                            uint64_t *result, const void *cookie);
 #endif

@@ -1,14 +1,20 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <assert.h>
 #include <ctype.h>
 #include <stdint.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <sysexits.h>
+#include <sys/stat.h>
 
 #include "hash.h"
 #include "isasl.h"
+#include "memcached.h"
+
+static struct stat prev_stat = { 0 };
 
 static pthread_mutex_t uhash_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -79,9 +85,14 @@ static void free_user_ht(void)
     }
 }
 
-static int load_user_db(void)
+static const char *get_isasl_filename()
 {
-    const char *filename = getenv("ISASL_PWFILE");
+    return getenv("ISASL_PWFILE");
+}
+
+static int load_user_db()
+{
+    const char *filename = get_isasl_filename();
     if (!filename) {
         fprintf(stderr, "No ISASL_PWFILE defined.\n");
         return SASL_FAIL;
@@ -100,6 +111,13 @@ static int load_user_db(void)
         return SASL_NOMEM;
     }
 
+    // File may have comment lines that must being with '#'.
+    // Otherwise, lines should be newline terminated, and look like...
+    //   <NAME><whitespace><PASSWORD><optional_whitespace>
+    // or...
+    //   <NAME><optional_whitespace>
+    // The last signifies an empty PASSWORD string.
+    //
     char up[128];
     while (fgets(up, sizeof(up), sfile)) {
         if (up[0] != '#') {
@@ -108,18 +126,24 @@ static int load_user_db(void)
             while (*p && !isspace(p[0])) {
                 p++;
             }
-            p[0] = '\0';
-            p++;
-            while (isspace(*p)) {
-                p++;
-            }
             if (p[0] != '\0') {
+                p[0] = '\0';
+                p++;
+                while (*p && isspace(*p)) {
+                    p++;
+                }
+            }
+            if (strlen(uname) > 0) {
                 store_pw(new_ut, uname, p);
             }
         }
     }
 
     fclose(sfile);
+
+    if (settings.verbose) {
+        fprintf(stderr, "Loaded isasl db from %s\n", filename);
+    }
 
     pthread_mutex_lock(&uhash_lock);
     free_user_ht();
@@ -135,10 +159,54 @@ void sasl_dispose(sasl_conn_t **pconn)
     *pconn = NULL;
 }
 
+static bool isasl_is_fresh()
+{
+    bool rv = false;
+    struct stat st;
+
+    if (stat(get_isasl_filename(), &st) < 0) {
+        perror(get_isasl_filename());
+    } else {
+        rv = prev_stat.st_mtime == st.st_mtime;
+        prev_stat = st;
+    }
+    return rv;
+}
+
+static void* check_isasl_db_thread(void* arg)
+{
+    uint32_t sleep_time = *(int*)arg;
+    if (settings.verbose > 1) {
+        fprintf(stderr, "isasl checking DB every %ds\n", sleep_time);
+    }
+    for(;;) {
+        sleep(sleep_time);
+        if (!isasl_is_fresh()) {
+            load_user_db();
+        }
+    }
+    /* NOTREACHED */
+    return NULL;
+}
+
 int sasl_server_init(const sasl_callback_t *callbacks,
                      const char *appname)
 {
-    return load_user_db();
+    int rv = load_user_db();
+    if (rv == SASL_OK) {
+        static pthread_t t;
+        static uint32_t sleep_time;
+        const char *sleep_time_str = getenv("ISASL_DB_CHECK_TIME");
+        if (! (sleep_time_str && safe_strtoul(sleep_time_str, &sleep_time))) {
+            // If we can't find a more frequent sleep time, set it to 60s.
+            sleep_time = 60;
+        }
+        if(pthread_create(&t, NULL, check_isasl_db_thread, &sleep_time) != 0) {
+            perror("couldn't create isasl db update thread.");
+            exit(EX_OSERR);
+        }
+    }
+    return rv;
 }
 
 int sasl_server_new(const char *service,
@@ -191,30 +259,29 @@ int sasl_server_start(sasl_conn_t *conn,
                       unsigned *serveroutlen)
 {
     int rv = SASL_FAIL;
-
-    assert(strcmp(mech, "PLAIN") == 0);
-
     *serverout = "";
     *serveroutlen = 0;
 
-    // 256 is an arbitrary ``large enough'' number.
-    if (clientinlen > 2 && clientinlen < 128 && clientin[0] == '\0') {
-        const char *username = clientin + 1;
-        char password[128];
-        int pwlen = clientinlen - 2 - strlen(username);
-        assert(pwlen > 0);
-        password[pwlen] = '\0';
-        memcpy(password, clientin + 2 + strlen(username), pwlen);
-        fprintf(stderr, "username:  ``%s'' (%d), password=``%s'' (%d)\n",
-                username, (int)strlen(username), password, pwlen);
+    if(strcmp(mech, "PLAIN") == 0) {
+        // 128 is an arbitrary ``large enough'' number.
+        // The clientin string looks like "\0username\0password"
+        if (clientinlen > 2 && clientinlen < 128 && clientin[0] == '\0') {
+            const char *username = clientin + 1;
+            char password[128];
+            int pwlen = clientinlen - 2 - strlen(username);
+            if (pwlen >= 0) {
+                password[pwlen] = '\0';
+                memcpy(password, clientin + 2 + strlen(username), pwlen);
 
-        if (check_up(username, password)) {
-            if (conn->username) {
-                free(conn->username);
-                conn->username = NULL;
+                if (check_up(username, password)) {
+                    if (conn->username) {
+                        free(conn->username);
+                        conn->username = NULL;
+                    }
+                    conn->username = strdup(username);
+                    rv = SASL_OK;
+                }
             }
-            conn->username = strdup(username);
-            rv = SASL_OK;
         }
     }
 
