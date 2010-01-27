@@ -141,6 +141,7 @@
 }
 
 static char *nodeid;
+volatile sig_atomic_t memcached_shutdown;
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -4425,6 +4426,11 @@ void event_handler(const int fd, const short which, void *arg) {
     c = (conn *)arg;
     assert(c != NULL);
 
+    if (memcached_shutdown) {
+        event_base_loopbreak(c->event.ev_base);
+        return ;
+    }
+
     c->which = which;
 
     /* sanity */
@@ -4797,6 +4803,11 @@ static void clock_handler(const int fd, const short which, void *arg) {
     struct timeval t = {.tv_sec = 1, .tv_usec = 0};
     static bool initialized = false;
 
+    if (memcached_shutdown) {
+        event_base_loopbreak(main_base);
+        return ;
+    }
+
     if (initialized) {
         /* only delete the event if it's actually there. */
         evtimer_del(&clockevent);
@@ -5005,11 +5016,6 @@ void continue_server(void)
 
 #ifndef __WIN32__
 
-static void sig_handler(const int sig) {
-    printf("SIGINT handled.\n");
-    exit(EXIT_SUCCESS);
-}
-
 #ifndef HAVE_SIGIGNORE
 static int sigignore(int sig) {
     struct sigaction sa = { .sa_handler = SIG_IGN, .sa_flags = 0 };
@@ -5023,6 +5029,21 @@ static int sigignore(int sig) {
 
 #endif /* !__WIN32__ */
 
+static void sigterm_handler(int sig) {
+    assert(sig == SIGTERM || sig == SIGINT);
+    memcached_shutdown = 1;
+}
+
+static int install_sigterm_handler(void) {
+    struct sigaction sa = {.sa_handler = sigterm_handler, .sa_flags = 0};
+
+    if (sigemptyset(&sa.sa_mask) == -1 || sigaction(SIGTERM, &sa, 0) == -1 ||
+        sigaction(SIGINT, &sa, 0) == -1) {
+        return -1;
+    }
+
+    return 0;
+}
 
 /*
  * On systems that supports multiple page sizes we may reduce the
@@ -5277,11 +5298,6 @@ int main (int argc, char **argv) {
 
     char *overlord = NULL; /* Master server ;-) */
 
-#ifndef __WIN32__
-    /* handle SIGINT */
-    signal(SIGINT, sig_handler);
-#endif
-
     /* init settings */
     settings_init();
 
@@ -5529,6 +5545,11 @@ int main (int argc, char **argv) {
             fprintf(stderr, "Illegal argument \"%c\"\n", c);
             return 1;
         }
+    }
+
+    if (install_sigterm_handler() != 0) {
+        fprintf(stderr, "Failed to install SIGTERM handler\n");
+        exit(EXIT_FAILURE);
     }
 
     char *topkeys_env = getenv("MEMCACHED_TOP_KEYS");
@@ -5815,6 +5836,11 @@ int main (int argc, char **argv) {
 #endif
     /* enter the event loop */
     event_base_loop(main_base, 0);
+
+    if (settings.verbose) {
+        fprintf(stderr, "Initiating shutdown\n");
+    }
+    threads_shutdown();
 
     settings.engine.v1->destroy(settings.engine.v0);
 
