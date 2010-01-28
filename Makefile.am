@@ -2,7 +2,8 @@ bin_PROGRAMS = memcached
 pkginclude_HEADERS = include/memcached/protocol_binary.h \
                      include/memcached/engine.h \
                      include/memcached/config_parser.h \
-                     include/memcached/util.h
+                     include/memcached/util.h \
+                     include/memcached/genhash.h
 
 noinst_PROGRAMS = sizes testapp timedrun
 
@@ -23,7 +24,7 @@ memcached_SOURCES = memcached.c memcached.h \
                     stdin_check.c topkeys.c topkeys.h
 
 libmcd_util_la_SOURCES= config_parser.c include/memcached/config_parser.h util.c include/memcached/util.h genhash.c genhash_int.h \
-			include/memcached/genhash.h
+                        include/memcached/genhash.h
 libmcd_util_la_LDFLAGS= -dynamic
 
 if BUILD_CACHE
