@@ -9,7 +9,6 @@ CC = gcc
 
 OBJDIR = .libs .libs/win32
 BINARIES= memcached.exe .libs/default_engine.so
-GENHASH_DIR=../genhash
 LIB=/lib
 INCLUDE=/include
 
@@ -17,7 +16,7 @@ all: ${BINARIES}
 
 CFLAGS = -std=gnu99 -O2 -DNDEBUG -fno-strict-aliasing -Wall \
  -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls \
- -I${INCLUDE} -Iinclude -Iwin32 -I.libs -I${GENHASH_DIR} -DHAVE_CONFIG_H
+ -I${INCLUDE} -Iinclude -Iwin32 -I.libs -DHAVE_CONFIG_H
 
 MEMCACHED_SRC = cache.c config_parser.c globals.c hash.c isasl.c memcached.c \
  sasl_defs.c stats.c stdin_check.c thread.c topkeys.c util.c win32/defs.c win32/dlfcn.c \
@@ -32,7 +31,7 @@ GENFILES=.libs/config_version.h
 
 memcached.exe: ${OBJDIR} ${GENFILES} $(MEMCACHED_OBJS)
 	${LINK.c} -o memcached.exe $(MEMCACHED_OBJS) \
-                  -L${LIB} -L${GENHASH_DIR} -lgenhash -levent -lmswsock \
+                  -L${LIB} -levent -lmswsock \
                   -lws2_32 -lpthread
 
 .libs/default_engine.so: ${OBJDIR} $(DEFAULT_ENGINE_OBJS)
