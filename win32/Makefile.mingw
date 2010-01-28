@@ -63,7 +63,7 @@ bdist: ${BINARIES} version
 	cp memcached.exe $(TMP_DIR)/memcached
 	cp .libs/default_engine.so $(TMP_DIR)/memcached
 	cp win32/pthreadGC2.dll $(TMP_DIR)/memcached
-	uname -s | sed s/MINGW32/win/g | sed s/_NT-6.0//g > $(TMP_OS)
+	uname -s > $(TMP_OS)
 	tar --directory $(TMP_DIR) -czf memcached_`cat $(TMP_VER)`-`cat $(TMP_OS)`.`uname -m`.tar.gz memcached
 	echo created memcached_`cat $(TMP_VER)`-`cat $(TMP_OS)`.`uname -m`.tar.gz
 
