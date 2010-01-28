@@ -278,8 +278,48 @@ extern "C" {
         size_t nkey;
     };
 
-    typedef int (*TAP_ITERATOR)(ENGINE_HANDLE* handle, const void *cookie, item **item);
+    /* tap flags */
+    /* @todo document and reserve the flags.. this is currently just an idea */
+    #define TAP_FLAG_SEND_CATCHUP 1
+    #define TAP_FLAG_DATA_INCLUDED 2
+    #define TAP_FLAG_SEND_ACK 4
 
+    typedef enum { TAP_MUTATION = 1,
+                   TAP_DELETION,
+                   TAP_FLUSH,
+                   TAP_OPAQUE,
+                   TAP_ACK,
+                   TAP_PAUSE } tap_event_t;
+
+    /**
+     * An iterator for the tap stream.
+     * The memcached core will keep on calling this function as long as a tap
+     * client is connected to the server. Each event returned by the iterator
+     * will be encoded in the binary protocol with the appropriate command opcode.
+     *
+     * If the engine needs to store extra information in the tap stream it should
+     * do so by returning the data through the engine_specific pointer. This data
+     * should be valid for the core to use (read only) until the next invocation
+     * of the iterator, of if the connection is closed.
+     *
+     * @param handle the engine handle
+     * @param cookie identification for the tap stream
+     * @param item item to send returned here (check tap_event_t)
+     * @param engine_specific engine specific data returned here
+     * @param nengine_specific number of bytes of engine specific data
+     * @param ttl ttl for this item (Tap stream hops)
+     * @param flags tap flags for this object
+     * @param seqno sequence number to send
+     * @return the tap event to send (or TAP_PAUSE if there isn't any events)
+     */
+    typedef tap_event_t (*TAP_ITERATOR)(ENGINE_HANDLE* handle,
+                                        const void *cookie,
+                                        item **item,
+                                        void **engine_specific,
+                                        uint16_t *nengine_specific,
+                                        uint8_t *ttl,
+                                        uint16_t *flags,
+                                        uint32_t *seqno);
 
     /**
      * The signature for the "create_instance" function exported from the module.
@@ -552,6 +592,47 @@ extern "C" {
                                              const void* cookie,
                                              protocol_binary_request_header *request,
                                              ADD_RESPONSE response);
+
+        /* TAP operations */
+
+        /**
+         * Callback for all incoming TAP messages. It is up to the engine
+         * to determine what to do with the event. The core will create and send
+         * a TAP_ACK message if the flag section contains TAP_FLAG_SEND_ACK with
+         * the status byte mapped from the return code.
+         *
+         * @param handle the engine handle
+         * @param cookie identification for the tap stream
+         * @param engine_specific pointer to engine specific data (received)
+         * @param nengine_specific number of bytes of engine specific data
+         * @param ttl ttl for this item (Tap stream hops)
+         * @param tap_flags tap flags for this object
+         * @param tap_event the tap event from over the wire
+         * @param tap_seqno sequence number for this item
+         * @param key the key in the message
+         * @param nkey the number of bytes in the key
+         * @param flags the flags for the item
+         * @param exptime the expiry time for the object
+         * @param cas the cas for the item
+         * @param data the data for the item
+         * @param ndata the number of bytes in the object
+         * @return ENGINE_SUCCESS for success
+         */
+        ENGINE_ERROR_CODE (*tap_notify)(ENGINE_HANDLE* handle,
+                                        const void *cookie,
+                                        void *engine_specific,
+                                        uint16_t nengine,
+                                        uint8_t ttl,
+                                        uint16_t tap_flags,
+                                        tap_event_t tap_event,
+                                        uint32_t tap_seqno,
+                                        const void *key,
+                                        size_t nkey,
+                                        uint32_t flags,
+                                        uint32_t exptime,
+                                        uint64_t cas,
+                                        const void *data,
+                                        size_t ndata);
 
         /**
          * Get (or create) a Tap iterator for this connection.

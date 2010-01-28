@@ -2053,28 +2053,11 @@ static void ship_tap_log(conn *c) {
         conn_set_state(c, conn_closing);
         return ;
     }
+    /* @todo add check for buffer overflow of c->wbuf) */
     c->wcurr = c->wbuf;
 
     bool more_data = true;
     bool send_data = false;
-
-    /* we want to have one of these filled with the default values to avoid having
-     * to recreate it all the time
-     */
-    protocol_binary_request_tap_mutation mutation = {
-        .message.header.request.magic = (uint8_t)PROTOCOL_BINARY_REQ,
-        .message.header.request.opcode = (uint8_t)PROTOCOL_BINARY_CMD_TAP_MUTATION
-    };
-
-    protocol_binary_request_tap_delete delete = {
-        .message.header.request.magic = (uint8_t)PROTOCOL_BINARY_REQ,
-        .message.header.request.opcode = (uint8_t)PROTOCOL_BINARY_CMD_TAP_DELETE
-    };
-
-    static protocol_binary_request_tap_flush flush = {
-        .message.header.request.magic = (uint8_t)PROTOCOL_BINARY_REQ,
-        .message.header.request.opcode = (uint8_t)PROTOCOL_BINARY_CMD_TAP_FLUSH
-    };
 
     item *it;
     uint32_t bodylen;
@@ -2086,53 +2069,100 @@ static void ship_tap_log(conn *c) {
             break;
         }
 
-        int event = c->tap_iterator(settings.engine.v0, c, &it);
+        void *engine;
+        uint16_t nengine;
+        uint8_t ttl;
+        uint16_t tap_flags;
+        uint32_t seqno;
+
+        tap_event_t event = c->tap_iterator(settings.engine.v0, c, &it,
+                                            &engine, &nengine, &ttl,
+                                            &tap_flags, &seqno);
+        union {
+            protocol_binary_request_tap_mutation mutation;
+            protocol_binary_request_tap_delete delete;
+            protocol_binary_request_tap_flush flush;
+            protocol_binary_request_tap_opaque opaque;
+        } msg = {
+            .mutation.message.header.request.magic = (uint8_t)PROTOCOL_BINARY_REQ,
+        };
+
+        msg.opaque.message.header.request.opaque = htonl(seqno);
+        msg.opaque.message.body.tap.enginespecific_length = htons(nengine);
+        msg.opaque.message.body.tap.ttl = ttl;
+        msg.opaque.message.body.tap.flags = htons(tap_flags);
+        msg.opaque.message.header.request.extlen = 8;
+
         switch (event) {
-        case 0 :
+        case TAP_PAUSE :
             more_data = false;
             break;
-        case 1:
+        case TAP_MUTATION:
             /* This is a store */
+            /* @todo check if I'm supposed to send the value! */
             send_data = true;
             c->ilist[c->ileft++] = it;
 
-            mutation.message.header.request.cas = htonll(settings.engine.v1->item_get_cas(it));
-            mutation.message.header.request.keylen = htons(it->nkey);
-            mutation.message.header.request.extlen = 8;
-            bodylen = 8 + (it->nbytes - 2) + it->nkey;
-            mutation.message.header.request.bodylen = htonl(bodylen);
-            mutation.message.body.flags = it->flags;
-            mutation.message.body.expiration = htonl(it->exptime);
-            memcpy(c->wcurr, mutation.bytes, sizeof(mutation.bytes));
+            msg.mutation.message.header.request.opcode = PROTOCOL_BINARY_CMD_TAP_MUTATION;
+            msg.mutation.message.header.request.cas = htonll(settings.engine.v1->item_get_cas(it));
+            msg.mutation.message.header.request.keylen = htons(it->nkey);
+            msg.mutation.message.header.request.extlen = 16;
+            bodylen = 16 + (it->nbytes - 2) + it->nkey + nengine;
+            msg.mutation.message.header.request.bodylen = htonl(bodylen);
+            msg.mutation.message.body.item.flags = it->flags;
+            msg.mutation.message.body.item.expiration = htonl(it->exptime);
+            msg.mutation.message.body.tap.enginespecific_length = htons(nengine);
+            msg.mutation.message.body.tap.ttl = ttl;
+            msg.mutation.message.body.tap.flags = htons(tap_flags);
+            memcpy(c->wcurr, msg.mutation.bytes, sizeof(msg.mutation.bytes));
 
-            add_iov(c, c->wcurr, sizeof(mutation.bytes));
-            c->wcurr += sizeof(mutation.bytes);
-            c->wbytes += sizeof(mutation.bytes);
+            add_iov(c, c->wcurr, sizeof(msg.mutation.bytes));
+            c->wcurr += sizeof(msg.mutation.bytes);
+            c->wbytes += sizeof(msg.mutation.bytes);
+
+            if (nengine > 0) {
+                memcpy(c->wcurr, engine, nengine);
+                add_iov(c, c->wcurr, nengine);
+                c->wcurr += nengine;
+                c->wbytes += nengine;
+            }
+
             add_iov(c, settings.engine.v1->item_get_key(it), it->nkey);
             add_iov(c, settings.engine.v1->item_get_data(it), it->nbytes - 2);
             break;
-
-        case 2:
+        case TAP_DELETION:
             /* This is a delete */
             send_data = true;
             c->ilist[c->ileft++] = it;
-            delete.message.header.request.keylen = htons(it->nkey);
-            delete.message.header.request.bodylen = htonl(it->nkey);
-            memcpy(c->wcurr, delete.bytes, sizeof(delete.bytes));
-            add_iov(c, c->wcurr, sizeof(delete.bytes));
-            c->wcurr += sizeof(delete.bytes);
-            c->wbytes += sizeof(delete.bytes);
+            msg.mutation.message.header.request.opcode = PROTOCOL_BINARY_CMD_TAP_DELETE;
+            msg.delete.message.header.request.keylen = htons(it->nkey);
+            msg.delete.message.header.request.bodylen = htonl(it->nkey + 8);
+            memcpy(c->wcurr, msg.delete.bytes, sizeof(msg.delete.bytes));
+            add_iov(c, c->wcurr, sizeof(msg.delete.bytes));
+            c->wcurr += sizeof(msg.delete.bytes);
+            c->wbytes += sizeof(msg.delete.bytes);
             add_iov(c, settings.engine.v1->item_get_key(it), it->nkey);
             break;
 
-        case 3:
+        case TAP_FLUSH:
+        case TAP_OPAQUE:
             send_data = true;
-            memcpy(c->wcurr, flush.bytes, sizeof(flush.bytes));
-            add_iov(c, c->wcurr, sizeof(flush.bytes));
-            c->wcurr += sizeof(flush.bytes);
-            c->wbytes += sizeof(flush.bytes);
+            msg.flush.message.header.request.opcode = PROTOCOL_BINARY_CMD_TAP_FLUSH;
+            if (event == TAP_OPAQUE) {
+                msg.flush.message.header.request.opcode = PROTOCOL_BINARY_CMD_TAP_OPAQUE;
+            }
+            msg.flush.message.header.request.bodylen = htonl(8 + nengine);
+            memcpy(c->wcurr, msg.flush.bytes, sizeof(msg.flush.bytes));
+            add_iov(c, c->wcurr, sizeof(msg.flush.bytes));
+            c->wcurr += sizeof(msg.flush.bytes);
+            c->wbytes += sizeof(msg.flush.bytes);
+            if (nengine > 0) {
+                memcpy(c->wcurr, engine, nengine);
+                add_iov(c, c->wcurr, nengine);
+                c->wcurr += nengine;
+                c->wbytes += nengine;
+            }
             break;
-
         default:
             abort();
         }
@@ -2255,98 +2285,45 @@ static void process_bin_tap_connect(conn *c) {
     }
 }
 
-static void process_bin_tap_mutation(conn *c) {
+static void process_bin_tap_packet(tap_event_t event, conn *c) {
     assert(c != NULL);
     char *packet = (c->rcurr - (c->binary_header.request.bodylen +
                                 sizeof(c->binary_header)));
-    protocol_binary_request_tap_mutation *req = (void*)packet;
-    assert(req->message.header.request.extlen == 8);
-    /* fix byteorder in the request */
-    req->message.body.expiration = ntohl(req->message.body.expiration);
+    protocol_binary_request_tap_no_extras *tap = (void*)packet;
+    uint16_t nengine = ntohs(tap->message.body.tap.enginespecific_length);
+    uint16_t tap_flags = ntohs(tap->message.body.tap.flags);
+    uint32_t seqno = ntohl(tap->message.header.request.opaque);
+    uint8_t ttl = tap->message.body.tap.ttl;
+    assert(ttl > 0);
+    char *engine_specific = packet + sizeof(tap->bytes);
+    char *key = engine_specific + nengine;
+    uint16_t nkey = c->binary_header.request.keylen;
+    char *data = key + nkey;
+    uint32_t flags = 0;
+    uint32_t exptime = 0;
+    uint32_t ndata = c->binary_header.request.bodylen - nengine - nkey - 8;
 
-    char *key = packet + sizeof(req->bytes);
-    int nkey = c->binary_header.request.keylen;
-    int vlen = c->binary_header.request.bodylen -
-        (nkey + c->binary_header.request.extlen);
-
-    if (settings.verbose > 1) {
-        fprintf(stderr, "<%d STORE REPLICATE ", c->sfd);
-        for (int ii = 0; ii < nkey; ++ii) {
-            fprintf(stderr, "%c", key[ii]);
-        }
-        fprintf(stderr, "\n");
+    if (event == TAP_MUTATION) {
+        protocol_binary_request_tap_mutation *mutation = (void*)tap;
+        flags = ntohl(mutation->message.body.item.flags);
+        exptime = ntohl(mutation->message.body.item.expiration);
+        key += 8;
+        data += 8;
+        ndata -= 8;
     }
 
-    item *it;
     ENGINE_ERROR_CODE ret;
-
-    ret = settings.engine.v1->allocate(settings.engine.v0, c,
-                                       &it, key, nkey,
-                                       vlen + 2,
-                                       req->message.body.flags,
-                                       realtime(req->message.body.expiration));
-
-    if (ret == ENGINE_SUCCESS) {
-        settings.engine.v1->item_set_cas(it, c->binary_header.request.cas);
-
-        /* We don't actually receive the trailing two characters in the bin
-         * protocol, so we're going to just set them here */
-        char *data = settings.engine.v1->item_get_data(it);
-        memcpy(data, key + nkey, vlen);
-        data += vlen;
-        *data = '\r';
-        *(data + 1) = '\n';
-        ret = settings.engine.v1->store(settings.engine.v0, c, it, &c->cas,
-                                        OPERATION_SET);
-
-        if (ret != ENGINE_SUCCESS) {
-            fprintf(stderr, "FAILED TO STORE REPLICA\n");
-        }
-        settings.engine.v1->release(settings.engine.v0, c, it);
-    } else {
-        fprintf(stderr, "FAILED TO ALLOCATE REPLICA\n");
-    }
+    ret = settings.engine.v1->tap_notify(settings.engine.v0, c,
+                                         engine_specific, nengine,
+                                         ttl - 1, tap_flags,
+                                         event, seqno,
+                                         key, nkey,
+                                         flags, exptime,
+                                         ntohll(tap->message.header.request.cas),
+                                         data, ndata);
 
     /* @todo we don't do acks at this time */
     conn_set_state(c, conn_new_cmd);
-}
-
-static void process_bin_tap_delete(conn *c) {
-    char *packet = (c->rcurr - (c->binary_header.request.bodylen +
-                                sizeof(c->binary_header)));
-    protocol_binary_request_tap_delete *req = (void*)c->rcurr;
-    char *key = packet + sizeof(req->bytes);
-    int nkey = c->binary_header.request.keylen;
-
-    if (settings.verbose > 1) {
-        fprintf(stderr, "<%d DELETE REPLICATE ", c->sfd);
-        for (int ii = 0; ii < nkey; ++ii) {
-            fprintf(stderr, "%c", key[ii]);
-        }
-        fprintf(stderr, "\n");
-    }
-
-    item *it;
-    if (settings.engine.v1->get(settings.engine.v0, c, &it, key, nkey) == ENGINE_SUCCESS) {
-        settings.engine.v1->remove(settings.engine.v0, c, it);
-        settings.engine.v1->release(settings.engine.v0, c, it);
-    } else {
-        fprintf(stderr, "Replicate not found\n");
-    }
-    /* @todo we don't do acks at this time */
-    conn_set_state(c, conn_new_cmd);
-}
-
-static void process_bin_tap_flush(conn *c) {
-    settings.engine.v1->flush(settings.engine.v0, c, 0);
-    /* @todo we don't do acks at this time */
-    conn_set_state(c, conn_new_cmd);
-}
-
-static void process_bin_switchover(conn *c) {
-    /* @todo stop replication, enable client commands */
-    /* shut down connection */
-    conn_set_state(c, conn_closing);
 }
 
 static void process_bin_packet(conn *c) {
@@ -2359,16 +2336,16 @@ static void process_bin_packet(conn *c) {
         process_bin_tap_connect(c);
         break;
     case PROTOCOL_BINARY_CMD_TAP_MUTATION:
-        process_bin_tap_mutation(c);
+        process_bin_tap_packet(TAP_MUTATION, c);
         break;
     case PROTOCOL_BINARY_CMD_TAP_DELETE:
-        process_bin_tap_delete(c);
+        process_bin_tap_packet(TAP_DELETION, c);
         break;
     case PROTOCOL_BINARY_CMD_TAP_FLUSH:
-        process_bin_tap_flush(c);
+        process_bin_tap_packet(TAP_FLUSH, c);
         break;
-    case PROTOCOL_BINARY_CMD_SWITCHOVER:
-        process_bin_switchover(c);
+    case PROTOCOL_BINARY_CMD_TAP_OPAQUE:
+        process_bin_tap_packet(TAP_OPAQUE, c);
         break;
     default:
         process_bin_unknown_packet(c);
@@ -2525,7 +2502,7 @@ static void dispatch_bin_command(conn *c) {
        case PROTOCOL_BINARY_CMD_TAP_MUTATION:
        case PROTOCOL_BINARY_CMD_TAP_DELETE:
        case PROTOCOL_BINARY_CMD_TAP_FLUSH:
-       case PROTOCOL_BINARY_CMD_SWITCHOVER:
+       case PROTOCOL_BINARY_CMD_TAP_OPAQUE:
             bin_read_chunk(c, bin_reading_packet, c->binary_header.request.bodylen);
             break;
 

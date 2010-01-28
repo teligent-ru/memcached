@@ -140,7 +140,7 @@ extern "C"
         PROTOCOL_BINARY_CMD_TAP_MUTATION = 0x41,
         PROTOCOL_BINARY_CMD_TAP_DELETE = 0x42,
         PROTOCOL_BINARY_CMD_TAP_FLUSH = 0x43,
-        PROTOCOL_BINARY_CMD_SWITCHOVER = 0x44,
+        PROTOCOL_BINARY_CMD_TAP_OPAQUE = 0x44,
         /* End replication */
 
         PROTOCOL_BINARY_CMD_LAST_RESERVED = 0xef
@@ -443,15 +443,53 @@ extern "C"
             protocol_binary_request_header header;
             struct {
                 uint32_t flags;
+                uint16_t enginespecific_length;
             } body;
         } message;
         uint8_t bytes[sizeof(protocol_binary_request_header) + 4];
     } protocol_binary_request_tap_connect;
 
-    typedef protocol_binary_request_set protocol_binary_request_tap_mutation;
-    typedef protocol_binary_request_delete protocol_binary_request_tap_delete;
-    typedef protocol_binary_request_no_extras protocol_binary_request_tap_flush;
-    typedef protocol_binary_request_no_extras protocol_binary_request_switchover;
+    typedef union {
+        struct {
+            protocol_binary_request_header header;
+            struct {
+                struct {
+                    uint16_t enginespecific_length;
+                    uint16_t flags;
+                    uint8_t  ttl;
+                    uint8_t  res1;
+                    uint8_t  res2;
+                    uint8_t  res3;
+                } tap;
+                struct {
+                    uint32_t flags;
+                    uint32_t expiration;
+                } item;
+            } body;
+        } message;
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 16];
+    } protocol_binary_request_tap_mutation;
+
+    typedef union {
+        struct {
+            protocol_binary_request_header header;
+            struct {
+                struct {
+                    uint16_t enginespecific_length;
+                    uint16_t flags;
+                    uint8_t  ttl;
+                    uint8_t  res1;
+                    uint8_t  res2;
+                    uint8_t  res3;
+                } tap;
+            } body;
+        } message;
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 8];
+    } protocol_binary_request_tap_no_extras;
+
+    typedef protocol_binary_request_tap_no_extras protocol_binary_request_tap_delete;
+    typedef protocol_binary_request_tap_no_extras protocol_binary_request_tap_flush;
+    typedef protocol_binary_request_tap_no_extras protocol_binary_request_tap_opaque;
 
 
     /**
