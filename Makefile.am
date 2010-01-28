@@ -1,7 +1,8 @@
 bin_PROGRAMS = memcached
 pkginclude_HEADERS = include/memcached/protocol_binary.h \
                      include/memcached/engine.h \
-                     include/memcached/config_parser.h
+                     include/memcached/config_parser.h \
+                     include/memcached/util.h
 
 noinst_PROGRAMS = sizes testapp timedrun
 
@@ -9,8 +10,8 @@ BUILT_SOURCES=
 
 testapp_SOURCES = testapp.c
 
-testapp_DEPENDENCIES= libconfig.la libutil.la
-testapp_LDADD= libconfig.la libutil.la
+testapp_DEPENDENCIES= libmcd_util.la
+testapp_LDADD= libmcd_util.la
 
 timedrun_SOURCES = timedrun.c
 
@@ -21,9 +22,8 @@ memcached_SOURCES = memcached.c memcached.h \
                     trace.h cache.h sasl_defs.h \
                     stdin_check.c topkeys.c topkeys.h
 
-noinst_LTLIBRARIES= libconfig.la libutil.la
-libconfig_la_SOURCES= config_parser.c
-libutil_la_SOURCES= util.c util.h
+libmcd_util_la_SOURCES= config_parser.c include/memcached/config_parser.h util.c include/memcached/util.h
+libmcd_util_la_LDFLAGS= -dynamic
 
 if BUILD_CACHE
 memcached_SOURCES += cache.c
@@ -38,7 +38,7 @@ if ENABLE_SASL
 memcached_SOURCES += sasl_defs.c
 endif
 
-memcached_LDADD = libconfig.la libutil.la @PROFILER_LDFLAGS@
+memcached_LDADD = libmcd_util.la @PROFILER_LDFLAGS@
 
 if ENABLE_ISASL
 memcached_SOURCES += sasl_defs.c isasl.c
@@ -46,7 +46,7 @@ endif
 
 memcached_LDFLAGS =-R '$(libdir)'
 memcached_CFLAGS = @PROFILER_FLAGS@
-memcached_DEPENDENCIES = libconfig.la libutil.la
+memcached_DEPENDENCIES = libmcd_util.la
 CLEANFILES=
 
 if BUILD_DTRACE
@@ -60,15 +60,15 @@ memcached_DEPENDENCIES += memcached_dtrace.o
 CLEANFILES += memcached_dtrace.o
 endif
 
-lib_LTLIBRARIES = default_engine.la
+lib_LTLIBRARIES = libmcd_util.la default_engine.la
 default_engine_la_SOURCES= \
                     assoc.c assoc.h \
                     default_engine.c default_engine.h \
                     items.c items.h \
                     slabs.c slabs.h
 
-default_engine_la_DEPENDENCIES= libutil.la
-default_engine_la_LIBADD=  libutil.la
+default_engine_la_DEPENDENCIES= libmcd_util.la
+default_engine_la_LIBADD=  libmcd_util.la
 default_engine_la_LDFLAGS= -module -dynamic
 
 if INCLUDE_DEFAULT_ENGINE
