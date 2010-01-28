@@ -1,8 +1,8 @@
 #ifndef TOPKEYS_H
 #define TOPKEYS_H 1
 
-#include "memcached/engine.h"
-#include "genhash.h"
+#include <memcached/engine.h>
+#include <memcached/genhash.h>
 
 /* A list of operations for which we have int stats */
 #define TK_OPS(C) C(get_hits) C(get_misses) C(cmd_set) C(incr_hits) \

@@ -4,7 +4,7 @@
 #include <inttypes.h>
 #include <string.h>
 #include <pthread.h>
-#include "genhash.h"
+#include <memcached/genhash.h>
 #include "topkeys.h"
 
 static topkey_item_t *topkey_item_init(const void *key, int nkey, rel_time_t ctime) {

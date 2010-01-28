@@ -22,7 +22,8 @@ memcached_SOURCES = memcached.c memcached.h \
                     trace.h cache.h sasl_defs.h \
                     stdin_check.c topkeys.c topkeys.h
 
-libmcd_util_la_SOURCES= config_parser.c include/memcached/config_parser.h util.c include/memcached/util.h
+libmcd_util_la_SOURCES= config_parser.c include/memcached/config_parser.h util.c include/memcached/util.h genhash.c genhash_int.h \
+			include/memcached/genhash.h
 libmcd_util_la_LDFLAGS= -dynamic
 
 if BUILD_CACHE
