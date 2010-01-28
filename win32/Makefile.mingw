@@ -1,4 +1,10 @@
 # Hard coded Makefile for windows
+
+TMP_DIR=./tmp
+
+TMP_VER=$(TMP_DIR)/version_num.tmp
+TMP_OS=$(TMP_DIR)/os.tmp
+
 CC = gcc
 
 OBJDIR = .libs .libs/win32
@@ -46,31 +52,19 @@ clean:
               ${BINARIES} ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d} \
               ${GENFILES}
 
-bdist: ${BINARIES}
-	rm -rf memcached_win32
-	mkdir memcached_win32
-	cp memcached.exe memcached_win32
-	cp .libs/default_engine.so memcached_win32
-	cp win32/pthreadGC2.dll memcached_win32
-	tar -czvf memcached_win32-`git describe`.tar.gz memcached_win32
-	rm -rf memcached_win32
+version:
+	test -d $(TMP_DIR) || mkdir $(TMP_DIR)
+	git describe | sed s/-/_/g > $(TMP_VER)
 
-zdist: ${BINARIES}
-	rm -rf memcached_win32
-	mkdir memcached_win32
-	cp memcached.exe memcached_win32
-	cp .libs/default_engine.so memcached_win32
-	cp win32/pthreadGC2.dll memcached_win32
-	zip -r memcached_win32-`git describe`.zip memcached_win32
-	rm -rf memcached_win32
-
-zdistdos: ${BINARIES}
-	del /F memcached_win32
-	mkdir memcached_win32
-	copy /Y memcached.exe memcached_win32
-	copy /Y .libs\default_engine.so memcached_win32
-	copy /Y win32\pthreadGC2.dll memcached_win32
-	zip -r memcached_win32-`git describe`.zip memcached_win32
-	del /F memcached_win32
+bdist: ${BINARIES} version
+	rm -f ./memcached_*.tar.gz
+	rm -rf $(TMP_DIR)/memcached
+	mkdir $(TMP_DIR)/memcached
+	cp memcached.exe $(TMP_DIR)/memcached
+	cp .libs/default_engine.so $(TMP_DIR)/memcached
+	cp win32/pthreadGC2.dll $(TMP_DIR)/memcached
+	uname -s | sed s/MINGW32/win/g | sed s/_NT-6.0//g > $(TMP_OS)
+	tar --directory $(TMP_DIR) -czf memcached_`cat $(TMP_VER)`-`cat $(TMP_OS)`.`uname -m`.tar.gz memcached
+	echo created memcached_`cat $(TMP_VER)`-`cat $(TMP_OS)`.`uname -m`.tar.gz
 
 -include ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d}
