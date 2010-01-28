@@ -291,9 +291,9 @@ int sasl_server_start(sasl_conn_t *conn,
         if (clientinlen > 2 && clientinlen < 128 && clientin[0] == '\0') {
             const char *username = clientin + 1;
             char password[128];
-            char *cfg;
             int pwlen = clientinlen - 2 - strlen(username);
             if (pwlen > 0) {
+                char *cfg = NULL;
                 password[pwlen] = '\0';
                 memcpy(password, clientin + 2 + strlen(username), pwlen);
 
