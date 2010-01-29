@@ -119,12 +119,11 @@ static int load_user_db(void)
         return SASL_NOMEM;
     }
 
+    // File has lines that are newline terminated.
     // File may have comment lines that must being with '#'.
-    // Otherwise, lines should be newline terminated, and look like...
-    //   <NAME><whitespace><PASSWORD><optional_whitespace>
-    // or...
-    //   <NAME><optional_whitespace>
-    // The last signifies an empty PASSWORD string.
+    // Lines should look like...
+    //   <NAME><whitespace><PASSWORD><whitespace><CONFIG><optional_whitespace>
+    // And, CONFIG and PASSWORD may be optional.
     //
     char up[128];
     while (fgets(up, sizeof(up), sfile)) {
@@ -149,7 +148,7 @@ static int load_user_db(void)
                     cfg[0] = '\0';
                     cfg++;
                     // Skip whitespace
-                    while (*cfg && isspace(p[0])) {
+                    while (*cfg && isspace(cfg[0])) {
                         cfg++;
                     }
                 }
