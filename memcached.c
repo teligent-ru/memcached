@@ -1646,7 +1646,7 @@ static void bin_list_sasl_mechs(conn *c) {
         write_bin_error(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
         return;
     }
-    write_bin_response(c, (char*)result_string, 0, 0, string_length);
+    write_bin_response(c, (char*)result_string, 0, 0, string_length+1);
 }
 
 struct sasl_tmp {
