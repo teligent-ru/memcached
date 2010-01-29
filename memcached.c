@@ -959,13 +959,6 @@ static void complete_nread_ascii(conn *c) {
 
         switch (ret) {
         case ENGINE_SUCCESS:
-            {
-                struct item_observer_cb_data cb = {
-                    .key = key,
-                    .nkey = it->nkey
-                };
-                perform_callbacks(ON_MUTATION, &cb, c);
-            }
             out_string(c, "STORED");
             break;
         case ENGINE_KEY_EEXISTS:
@@ -1164,13 +1157,6 @@ static void complete_incr_bin(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-            struct item_observer_cb_data cb = {
-                .key = key,
-                .nkey = nkey
-            };
-            perform_callbacks(ON_MUTATION, &cb, c);
-        }
         rsp->message.body.value = htonll(rsp->message.body.value);
         write_bin_response(c, &rsp->message.body, 0, 0,
                            sizeof (rsp->message.body.value));
@@ -1254,13 +1240,6 @@ static void complete_update_bin(conn *c) {
     switch (ret) {
     case ENGINE_SUCCESS:
         /* Stored */
-        {
-            struct item_observer_cb_data cb = {
-                .key = settings.engine.v1->item_get_key(it),
-                .nkey = it->nkey
-            };
-            perform_callbacks(ON_MUTATION, &cb, c);
-        }
         write_bin_response(c, NULL, 0, 0, 0);
         break;
     case ENGINE_KEY_EEXISTS:
@@ -2211,27 +2190,6 @@ static void process_bin_unknown_packet(conn *c) {
     }
 }
 
-static void feed_tap_queue(const void *cookie,
-                           ENGINE_EVENT_TYPE type,
-                           const void *event_data,
-                           const void *cb_data)
-{
-    conn *feed = (void*)cb_data;
-    conn *caller = (void*)cb_data;
-    assert(feed);
-    assert(caller);
-
-    if (caller->thread != feed->thread) {
-        LOCK_THREAD(feed->thread);
-    }
-
-    notify_io_complete(feed, ENGINE_SUCCESS);
-
-    if (caller->thread != feed->thread) {
-        UNLOCK_THREAD(feed->thread);
-    }
-}
-
 static void process_bin_tap_connect(conn *c) {
     /* @todo I want to send some sort of ack-message to let the slave know the
      * some info. For now, just ship log (the state machine doesn't expect to
@@ -2264,7 +2222,6 @@ static void process_bin_tap_connect(conn *c) {
         conn_set_state(c, conn_closing);
     } else {
         c->tap_iterator = iterator;
-        register_callback(ON_TAP_QUEUE, feed_tap_queue, c);
         conn_set_state(c, conn_ship_log);
 
         /* Trond:
@@ -2634,14 +2591,6 @@ static void process_bin_update(conn *c) {
         if (c->cmd == PROTOCOL_BINARY_CMD_SET) {
             /* @todo fix this for the ASYNC interface! */
             if (settings.engine.v1->get(settings.engine.v0, c, &it, key, nkey) == ENGINE_SUCCESS) {
-                {
-                    struct item_observer_cb_data cb = {
-                        .key = key,
-                        .nkey = nkey
-                    };
-                    perform_callbacks(ON_DELETE, &cb, c);
-                }
-
                 settings.engine.v1->remove(settings.engine.v0, c, it);
                 settings.engine.v1->release(settings.engine.v0, c, it);
             }
@@ -2757,13 +2706,6 @@ static void process_bin_delete(conn *c) {
         uint64_t cas = ntohll(req->message.header.request.cas);
         if (cas == 0 || cas == settings.engine.v1->item_get_cas(it)) {
             MEMCACHED_COMMAND_DELETE(c->sfd, settings.engine.v1->item_get_key(it), it->nkey);
-            {
-                struct item_observer_cb_data cb = {
-                    .key = key,
-                    .nkey = nkey
-                };
-                perform_callbacks(ON_DELETE, &cb, c);
-            }
             settings.engine.v1->remove(settings.engine.v0, c, it);
             write_bin_response(c, NULL, 0, 0, 0);
         } else {
@@ -3472,13 +3414,6 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         if (store_op == OPERATION_SET) {
             if (settings.engine.v1->get(settings.engine.v0, c, &it,
                                         key, nkey) == ENGINE_SUCCESS) {
-                {
-                    struct item_observer_cb_data cb = {
-                        .key = key,
-                        .nkey = nkey
-                    };
-                    perform_callbacks(ON_DELETE, &cb, c);
-                }
                 settings.engine.v1->remove(settings.engine.v0, c, it);
                 settings.engine.v1->release(settings.engine.v0, c, it);
             }
@@ -3518,13 +3453,6 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     char temp[INCR_MAX_STORAGE_LEN];
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-            struct item_observer_cb_data cb = {
-                .key = key,
-                .nkey = nkey
-            };
-            perform_callbacks(ON_MUTATION, &cb, c);
-        }
         if (incr) {
             STATS_INCR(c, incr_hits, key, nkey);
         } else {
@@ -3592,14 +3520,6 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 
     if (settings.engine.v1->get(settings.engine.v0, c, &it, key, nkey) == ENGINE_SUCCESS) {
         MEMCACHED_COMMAND_DELETE(c->sfd, settings.engine.v1->item_get_key(it), it->nkey);
-
-        {
-            struct item_observer_cb_data cb = {
-                .key = key,
-                .nkey = nkey
-            };
-            perform_callbacks(ON_DELETE, &cb, c);
-        }
         settings.engine.v1->remove(settings.engine.v0, c, it);
         /* release our reference */
         settings.engine.v1->release(settings.engine.v0, c, it);
