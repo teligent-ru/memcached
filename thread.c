@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <stdint.h>
+#include <signal.h>
 #include <pthread.h>
 
 #define ITEMS_PER_ALLOC 64
