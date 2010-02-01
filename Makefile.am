@@ -23,7 +23,9 @@ memcached_SOURCES = memcached.c memcached.h \
                     trace.h cache.h sasl_defs.h \
                     stdin_check.c topkeys.c topkeys.h
 
-libmcd_util_la_SOURCES= config_parser.c include/memcached/config_parser.h util.c include/memcached/util.h genhash.c genhash_int.h \
+libmcd_util_la_SOURCES= config_parser.c include/memcached/config_parser.h \
+                        util.c include/memcached/util.h \
+                        genhash.c genhash_int.h \
                         include/memcached/genhash.h
 libmcd_util_la_LDFLAGS= -dynamic
 
@@ -40,7 +42,7 @@ if ENABLE_SASL
 memcached_SOURCES += sasl_defs.c
 endif
 
-memcached_LDADD = libmcd_util.la @PROFILER_LDFLAGS@
+memcached_LDADD = @PROFILER_LDFLAGS@
 
 if ENABLE_ISASL
 memcached_SOURCES += sasl_defs.c isasl.c
@@ -48,7 +50,8 @@ endif
 
 memcached_LDFLAGS =-R '$(libdir)'
 memcached_CFLAGS = @PROFILER_FLAGS@
-memcached_DEPENDENCIES = libmcd_util.la
+memcached_DEPENDENCIES =
+
 CLEANFILES=
 
 if BUILD_DTRACE
@@ -63,19 +66,23 @@ CLEANFILES += memcached_dtrace.o
 endif
 
 lib_LTLIBRARIES = libmcd_util.la default_engine.la
+
 default_engine_la_SOURCES= \
                     assoc.c assoc.h \
                     default_engine.c default_engine.h \
                     items.c items.h \
                     slabs.c slabs.h
 
-default_engine_la_DEPENDENCIES= libmcd_util.la
-default_engine_la_LIBADD=  libmcd_util.la
+default_engine_la_SOURCES += $(libmcd_util_la_SOURCES)
+default_engine_la_DEPENDENCIES=
+default_engine_la_LIBADD=
 default_engine_la_LDFLAGS= -module -dynamic
 
 if INCLUDE_DEFAULT_ENGINE
 memcached_SOURCES += $(default_engine_la_SOURCES)
 endif
+
+memcached_SOURCES += $(libmcd_util_la_SOURCES)
 
 memcached_dtrace.h: memcached_dtrace.d
 	${DTRACE} -h -s memcached_dtrace.d
