@@ -358,16 +358,16 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     conn->aiostat = status;
     LIBEVENT_THREAD *thr = conn->thread;
 
-    pthread_mutex_lock(&thr->mutex);
+    LOCK_THREAD(thr);
     // This means we're calling notify_io_complete too frequently and
     // have nothing to do.
     if (conn->next != NULL) {
-        pthread_mutex_unlock(&thr->mutex);
+        UNLOCK_THREAD(thr);
         return;
     }
     conn->next = thr->pending_io;
     thr->pending_io = conn;
-    pthread_mutex_unlock(&thr->mutex);
+    UNLOCK_THREAD(thr);
 
     /* kick the thread in the butt */
     if (write(thr->notify_send_fd, "", 1) != 1) {
