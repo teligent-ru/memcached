@@ -263,6 +263,11 @@ struct engine_event_handler {
 extern struct stats stats;
 extern struct settings settings;
 
+enum thread_type {
+    GENERAL = 11,
+    TAP = 13
+};
+
 typedef struct {
     pthread_t thread_id;        /* unique ID of this thread */
     struct event_base *base;    /* libevent handle this thread uses */
@@ -275,6 +280,7 @@ typedef struct {
     bool is_locked;
     struct conn *pending_io;    /* List of connection with pending async io ops */
     int index;                  /* index of this thread in the threads array */
+    enum thread_type type;      /* Type of IO this thread processes */
 } LIBEVENT_THREAD;
 
 #define LOCK_THREAD(t)                          \

@@ -195,6 +195,7 @@ void accept_new_conns(const bool do_accept) {
  * Set up a thread's information.
  */
 static void setup_thread(LIBEVENT_THREAD *me, bool tap) {
+    me->type = tap ? TAP : GENERAL;
     me->base = event_init();
     if (! me->base) {
         fprintf(stderr, "Can't allocate event base\n");
@@ -260,6 +261,7 @@ static void *worker_libevent(void *arg) {
  */
 static void thread_libevent_process(int fd, short which, void *arg) {
     LIBEVENT_THREAD *me = arg;
+    assert(me->type == GENERAL);
     CQ_ITEM *item;
     char buf[1];
 
@@ -315,6 +317,7 @@ static void thread_libevent_process(int fd, short which, void *arg) {
 
 static void libevent_tap_process(int fd, short which, void *arg) {
     LIBEVENT_THREAD *me = arg;
+    assert(me->type == TAP);
     char buf[1];
 
     if (memcached_shutdown) {
