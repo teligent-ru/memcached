@@ -2019,6 +2019,7 @@ static void send_tap_connect(conn *c) {
 }
 
 static void ship_tap_log(conn *c) {
+    assert(c->thread->type == TAP);
     c->msgcurr = 0;
     c->msgused = 0;
     c->iovused = 0;
