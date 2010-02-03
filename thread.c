@@ -307,7 +307,6 @@ static void thread_libevent_process(int fd, short which, void *arg) {
     while (pending != NULL) {
         conn *c = pending;
         assert(me == c->thread);
-        assert(c->thread->type == GENERAL);
         pending = pending->next;
         c->next = NULL;
         event_add(&c->event, 0);
@@ -342,7 +341,6 @@ static void libevent_tap_process(int fd, short which, void *arg) {
         conn *c = pending;
         LOCK_THREAD(c->thread);
         assert(me == c->thread);
-        assert(c->thread->type == TAP);
         pending = pending->next;
         c->next = NULL;
         event_add(&c->event, 0);
@@ -358,6 +356,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     LIBEVENT_THREAD *thr = conn->thread;
 
     LOCK_THREAD(thr);
+    assert(thr == conn->thread);
     // This means we're calling notify_io_complete too frequently and
     // have nothing to do.
     if (conn->next != NULL) {
