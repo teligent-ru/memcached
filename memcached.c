@@ -596,6 +596,7 @@ static void conn_cleanup(conn *c) {
 
     c->engine_storage = NULL;
     c->tap_iterator = NULL;
+    c->thread = NULL;
 }
 
 /*

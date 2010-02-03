@@ -291,6 +291,7 @@ static void thread_libevent_process(int fd, short which, void *arg) {
                 close(item->sfd);
             }
         } else {
+            assert(c->thread == NULL);
             c->thread = me;
         }
         cqi_free(item);
