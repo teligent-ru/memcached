@@ -339,6 +339,9 @@ static void libevent_tap_process(int fd, short which, void *arg) {
     pthread_mutex_unlock(&me->mutex);
     while (pending != NULL) {
         conn *c = pending;
+
+        assert(c->thread == me);
+
         LOCK_THREAD(c->thread);
         assert(me == c->thread);
         pending = pending->next;
@@ -352,6 +355,12 @@ static void libevent_tap_process(int fd, short which, void *arg) {
 void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 {
     struct conn *conn = (struct conn *)cookie;
+
+    if (conn->state == conn_closing) {
+        fprintf(stderr, "Ignoring closed connection\n");
+        return;
+    }
+
     conn->aiostat = status;
     LIBEVENT_THREAD *thr = conn->thread;
 

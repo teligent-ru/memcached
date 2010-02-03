@@ -633,10 +633,29 @@ static void conn_close(conn *c) {
         fprintf(stderr, "<%d connection closed.\n", c->sfd);
 
     perform_callbacks(ON_DISCONNECT, NULL, c);
-
     MEMCACHED_CONN_RELEASE(c->sfd);
     close(c->sfd);
     accept_new_conns(true);
+
+    LOCK_THREAD(c->thread);
+    /* remove from pending-io list */
+    conn* pending = c->thread->pending_io;
+    conn* prev = NULL;
+    while (pending) {
+        if (pending == c) {
+            fprintf(stderr, "Current connection was in the pending-io list.. Nuking it\n");
+            if (prev == NULL) {
+                c->thread->pending_io = c->next;
+            } else {
+                prev->next = c->next;
+            }
+        }
+        prev = pending;
+        pending = pending->next;
+    }
+
+    UNLOCK_THREAD(c->thread);
+
     conn_cleanup(c);
 
     /* if the connection has big buffers, just free it */
@@ -724,7 +743,8 @@ static const char *state_text(enum conn_states state) {
                                        "conn_closing",
                                        "conn_mwrite",
                                        "conn_create_tap_connect",
-                                       "conn_ship_log" };
+                                       "conn_ship_log",
+                                       "conn_add_tap_client"};
     return statenames[state];
 }
 
@@ -2225,24 +2245,7 @@ static void process_bin_tap_connect(conn *c) {
         conn_set_state(c, conn_closing);
     } else {
         c->tap_iterator = iterator;
-        conn_set_state(c, conn_ship_log);
-
-        /* Trond:
-         * Ok, so this is really really experimental... Let's move this connection
-         * to another libevent instance ;-)
-         */
-        c->ewouldblock = true;
-        event_del(&c->event);
-        pthread_mutex_lock(&tap_thread.mutex);
-        c->thread = &tap_thread;
-        c->event.ev_base = tap_thread.base;
-        assert(c->next == NULL);
-        c->next = tap_thread.pending_io;
-        tap_thread.pending_io = c;
-        pthread_mutex_unlock(&tap_thread.mutex);
-        if (write(tap_thread.notify_send_fd, "", 1) != 1) {
-            perror("Writing to tap thread notify pipe");
-        }
+        conn_set_state(c, conn_add_tap_client);
     }
 }
 
@@ -4315,6 +4318,28 @@ void drive_machine(conn *c) {
             else
                 conn_close(c);
             stop = true;
+            break;
+
+        case conn_add_tap_client:
+            {
+                LIBEVENT_THREAD *tp = &tap_thread;
+                c->ewouldblock = true;
+
+                event_del(&c->event);
+
+                LOCK_THREAD(tp);
+                conn_set_state(c, conn_ship_log);
+                c->thread = tp;
+                c->event.ev_base = tp->base;
+                assert(c->next == NULL);
+                c->next = tap_thread.pending_io;
+                tp->pending_io = c;
+                if (write(tp->notify_send_fd, "", 1) != 1) {
+                    perror("Writing to tap thread notify pipe");
+                }
+                UNLOCK_THREAD(tp);
+                stop = true;
+            }
             break;
 
         case conn_max_state:
