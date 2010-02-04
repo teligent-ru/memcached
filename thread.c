@@ -254,6 +254,15 @@ static void *worker_libevent(void *arg) {
     return NULL;
 }
 
+int number_of_pending(conn *c, conn *list) {
+    int rv = 0;
+    for (; list; list = list->next) {
+        if (list == c) {
+            rv ++;
+        }
+    }
+    return rv;
+}
 
 /*
  * Processes an incoming "handle a new connection" item. This is called when
@@ -309,6 +318,7 @@ static void thread_libevent_process(int fd, short which, void *arg) {
         assert(me == c->thread);
         pending = pending->next;
         c->next = NULL;
+        assert(number_of_pending(c, me->pending_io) == 1);
         event_add(&c->event, 0);
         drive_machine(c);
     }
@@ -346,6 +356,7 @@ static void libevent_tap_process(int fd, short which, void *arg) {
         assert(me == c->thread);
         pending = pending->next;
         c->next = NULL;
+        assert(number_of_pending(c, pending) == 0);
         event_add(&c->event, 0);
         UNLOCK_THREAD(me);
         drive_machine(c);
@@ -372,8 +383,11 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
         UNLOCK_THREAD(thr);
         return;
     }
-    conn->next = thr->pending_io;
-    thr->pending_io = conn;
+    if (number_of_pending(conn, thr->pending_io) == 0) {
+        conn->next = thr->pending_io;
+        thr->pending_io = conn;
+    }
+    assert(number_of_pending(conn, thr->pending_io) == 1);
     UNLOCK_THREAD(thr);
 
     /* kick the thread in the butt */
