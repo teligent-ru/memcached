@@ -65,7 +65,8 @@ memcached_DEPENDENCIES += memcached_dtrace.o
 CLEANFILES += memcached_dtrace.o
 endif
 
-lib_LTLIBRARIES = libmcd_util.la default_engine.la
+noinst_LTLIBRARIES = libmcd_util.la
+lib_LTLIBRARIES = default_engine.la
 
 default_engine_la_SOURCES= \
                     assoc.c assoc.h \
