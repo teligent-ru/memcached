@@ -529,6 +529,7 @@ conn *conn_new(const int sfd, enum conn_states init_state,
     c->iovused = 0;
     c->msgcurr = 0;
     c->msgused = 0;
+    c->next = NULL;
 
     c->write_and_go = init_state;
     c->write_and_free = 0;
@@ -597,6 +598,7 @@ static void conn_cleanup(conn *c) {
     c->engine_storage = NULL;
     c->tap_iterator = NULL;
     c->thread = NULL;
+    c->next = NULL;
 }
 
 /*
