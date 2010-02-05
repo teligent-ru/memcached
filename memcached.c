@@ -1620,6 +1620,7 @@ static void get_auth_data(const void *cookie, auth_data_t *data) {
     }
 }
 
+#ifdef SASL_ENABLED
 static void bin_list_sasl_mechs(conn *c) {
     init_sasl_conn(c);
     const char *result_string = NULL;
@@ -1640,6 +1641,7 @@ static void bin_list_sasl_mechs(conn *c) {
     }
     write_bin_response(c, (char*)result_string, 0, 0, string_length);
 }
+#endif
 
 struct sasl_tmp {
     int ksize;
