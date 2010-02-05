@@ -2556,9 +2556,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("cmd_get", "%"PRIu64, thread_stats.cmd_get);
     APPEND_STAT("cmd_set", "%"PRIu64, slab_stats.cmd_set);
     APPEND_STAT("cmd_flush", "%"PRIu64, thread_stats.cmd_flush);
-#ifdef SASL_ENABLED
     APPEND_STAT("auth_cmds", "%"PRIu64, thread_stats.auth_cmds);
-#endif
     APPEND_STAT("get_hits", "%"PRIu64, slab_stats.get_hits);
     APPEND_STAT("get_misses", "%"PRIu64, thread_stats.get_misses);
     APPEND_STAT("delete_misses", "%"PRIu64, thread_stats.delete_misses);
@@ -2608,15 +2606,18 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
                 prot_text(settings.binding_protocol));
 #ifdef SASL_ENABLED
     APPEND_STAT("auth_enabled_sasl", "%s", "yes");
-    APPEND_STAT("auth_required_sasl", "%s", settings.require_sasl ? "yes" : "no");
- #ifdef ENABLE_SASL
-    APPEND_STAT("auth_sasl_engine", "%s", "cyrus");
- #else
-    APPEND_STAT("auth_sasl_engine", "%s", "isasl");
- #endif /* ENABLE_SASL */
 #else
     APPEND_STAT("auth_enabled_sasl", "%s", "no");
-#endif /* SASL_ENABLED */
+#endif
+
+#ifdef ENABLE_ISASL
+    APPEND_STAT("auth_sasl_engine", "%s", "isasl");
+#elif defined(ENABLE_SASL)
+    APPEND_STAT("auth_sasl_engine", "%s", "cyrus");
+#else
+    APPEND_STAT("auth_sasl_engine", "%s", "none");
+#endif
+    APPEND_STAT("auth_required_sasl", "%s", settings.require_sasl ? "yes" : "no");
     APPEND_STAT("item_size_max", "%d", settings.item_size_max);
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 }
