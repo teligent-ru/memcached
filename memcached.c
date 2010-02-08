@@ -4201,17 +4201,18 @@ static void usage(void) {
            "-l <ip_addr>  interface to listen on (default: INADDR_ANY, all addresses)\n"
            "-s <file>     unix socket path to listen on (disables network support)\n"
            "-a <mask>     access mask for unix socket, in octal (default 0700)\n"
-           "-l <ip_addr>  interface to listen on, default is INADDR_ANY\n"
+           "-l <ip_addr>  interface to listen on, default is INADDR_ANY\n");
+
 #ifndef __WIN32__
-           "-d            run as a daemon\n"
+    printf("-d            run as a daemon\n");
 #else
-           "-d start          tell memcached to start\n"
+    printf("-d start          tell memcached to start\n"
            "-d restart        tell running memcached to do a graceful restart\n"
            "-d stop|shutdown  tell running memcached to shutdown\n"
            "-d install        install memcached service\n"
-           "-d uninstall      uninstall memcached service\n"
+           "-d uninstall      uninstall memcached service\n");
 #endif
-           "-r            maximize core file limit\n"
+    printf("-r            maximize core file limit\n"
            "-u <username> assume identity of <username> (only when run as root)\n"
            "-m <num>      max memory to use for items in megabytes (default: 64 MB)\n"
            "-M            return error on memory exhausted (rather than removing items)\n"
