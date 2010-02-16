@@ -990,6 +990,9 @@ static void complete_nread_ascii(conn *c) {
         case ENGINE_NOT_STORED:
             out_string(c, "NOT_STORED");
             break;
+        case ENGINE_ENOTSUP:
+            out_string(c, "SERVER_ERROR not supported.");
+            break;
         default:
             out_string(c, "SERVER_ERROR Unhandled storage type.");
         }
@@ -1100,7 +1103,6 @@ static void write_bin_error(conn *c, protocol_binary_response_status err, int sw
         errstr = "Auth failure.";
         break;
     default:
-        assert(false);
         errstr = "UNHANDLED ERROR";
         fprintf(stderr, ">%d UNHANDLED ERROR: %d\n", c->sfd, err);
     }
