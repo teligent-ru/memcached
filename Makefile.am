@@ -148,7 +148,7 @@ bdist: version
 	mkdir $(TMP_DIR)/memcached
 	cp memcached $(TMP_DIR)/memcached
 	cp .libs/default_engine.so $(TMP_DIR)/memcached
-	tar --directory $(TMP_DIR) -czf memcached_`cat $(TMP_VER)`-`uname -s`.`uname -m`.tar.gz memcached
+	(cd $(TMP_DIR); tar cf - memcached) | gzip -9 > memcached_`cat $(TMP_VER)`-`uname -s`.`uname -m`.tar.gz
 	echo created memcached_`cat $(TMP_VER)`-`uname -s`.`uname -m`.tar.gz
 
 
