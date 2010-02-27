@@ -67,4 +67,15 @@ bdist: ${BINARIES} version
 	tar --directory $(TMP_DIR) -czf memcached_`cat $(TMP_VER)`-`cat $(TMP_OS)`.`uname -m`.tar.gz memcached
 	echo created memcached_`cat $(TMP_VER)`-`cat $(TMP_OS)`.`uname -m`.tar.gz
 
+bdist64: ${BINARIES} version
+	rm -f ./memcached_*.tar.gz
+	rm -rf $(TMP_DIR)/memcached
+	mkdir $(TMP_DIR)/memcached
+	cp memcached.exe $(TMP_DIR)/memcached
+	cp .libs/default_engine.so $(TMP_DIR)/memcached
+	cp win32/pthreadGC2_64.dll $(TMP_DIR)/memcached/pthreadGC2.dll
+	uname -s > $(TMP_OS)
+	tar --directory $(TMP_DIR) -czf memcached_`cat $(TMP_VER)`-`cat $(TMP_OS)`.`uname -m`.tar.gz memcached
+	echo created memcached_`cat $(TMP_VER)`-`cat $(TMP_OS)`.`uname -m`.tar.gz
+
 -include ${MEMCACHED_OBJS:.o=.d} ${DEFAULT_ENGINE_OBJS:.o=.d}
