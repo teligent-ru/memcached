@@ -961,6 +961,9 @@ static void complete_nread_ascii(conn *c) {
         case ENGINE_NOT_STORED:
             out_string(c, "NOT_STORED");
             break;
+        case ENGINE_DISCONNECT:
+            c->state = conn_closing;
+            break;
         default:
             out_string(c, "SERVER_ERROR Unhandled storage type.");
         }
@@ -1172,6 +1175,9 @@ static void complete_incr_bin(conn *c) {
     case ENGINE_NOT_STORED:
         write_bin_error(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
         break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
     default:
         abort();
     }
@@ -1234,6 +1240,9 @@ static void complete_update_bin(conn *c) {
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
     default:
         if (c->store_op == OPERATION_ADD) {
             eno = PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS;
@@ -1276,10 +1285,13 @@ static void process_bin_get(conn *c) {
         ret = settings.engine.v1->get(settings.engine.v0, c, &it, key, nkey);
     }
 
-    if (ret == ENGINE_SUCCESS) {
+    switch (ret) {
+        uint16_t keylen;
+        uint32_t bodylen;
+    case ENGINE_SUCCESS:
         /* the length has two unnecessary bytes ("\r\n") */
-        uint16_t keylen = 0;
-        uint32_t bodylen = sizeof(rsp->message.body) + (it->nbytes - 2);
+        keylen = 0;
+        bodylen = sizeof(rsp->message.body) + (it->nbytes - 2);
 
         STATS_HIT(c, get, key, nkey);
 
@@ -1303,7 +1315,8 @@ static void process_bin_get(conn *c) {
         conn_set_state(c, conn_mwrite);
         /* Remember this command so we can garbage collect it later */
         c->item = it;
-    } else if (ret == ENGINE_KEY_ENOENT) {
+        break;
+    case ENGINE_KEY_ENOENT:
         STATS_MISS(c, get, key, nkey);
 
         MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
@@ -1322,9 +1335,14 @@ static void process_bin_get(conn *c) {
                 write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
             }
         }
-    } else if (ret == ENGINE_EWOULDBLOCK) {
+        break;
+    case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
-    } else {
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    default:
         /* @todo add proper error handling! */
         fprintf(stderr, "Unknown error code: %d\n", ret);
         abort();
@@ -1514,6 +1532,9 @@ static void process_bin_stat(conn *c) {
             break;
         case ENGINE_KEY_ENOENT:
             write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+            break;
+        case ENGINE_DISCONNECT:
+            c->state = conn_closing;
             break;
         default:
             write_bin_error(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
@@ -2120,7 +2141,8 @@ static void process_bin_update(conn *c) {
                                            realtime(req->message.body.expiration));
     }
 
-    if (ret == ENGINE_SUCCESS) {
+    switch (ret) {
+    case ENGINE_SUCCESS:
         settings.engine.v1->item_set_cas(it, c->binary_header.request.cas);
 
         switch (c->cmd) {
@@ -2146,9 +2168,14 @@ static void process_bin_update(conn *c) {
         c->rlbytes = vlen;
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
-    } else if (ret == ENGINE_EWOULDBLOCK) {
+        break;
+    case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
-    } else {
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    default:
         if (ret == ENGINE_E2BIG) {
             write_bin_error(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         } else {
@@ -2200,7 +2227,8 @@ static void process_bin_append_prepend(conn *c) {
                                            vlen + 2, 0, 0);
     }
 
-    if (ret == ENGINE_SUCCESS) {
+    switch (ret) {
+    case ENGINE_SUCCESS:
         settings.engine.v1->item_set_cas(it, c->binary_header.request.cas);
 
         switch (c->cmd) {
@@ -2219,9 +2247,14 @@ static void process_bin_append_prepend(conn *c) {
         c->rlbytes = vlen;
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
-    } else if (ret == ENGINE_EWOULDBLOCK) {
+        break;
+    case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
-    } else {
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    default:
         if (ret == ENGINE_E2BIG) {
             write_bin_error(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         } else {
@@ -2700,6 +2733,9 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         case ENGINE_ENOMEM:
             out_string(c, "SERVER_ERROR out of memory writing stats");
             break;
+        case ENGINE_DISCONNECT:
+            c->state = conn_closing;
+            break;
         default:
             out_string(c, "ERROR");
             break;
@@ -2964,7 +3000,8 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
                                            vlen, flags, realtime(exptime));
     }
 
-    if (ret == ENGINE_SUCCESS) {
+    switch (ret) {
+    case ENGINE_SUCCESS:
         settings.engine.v1->item_set_cas(it, req_cas_id);
 
         c->item = it;
@@ -2972,9 +3009,14 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         c->rlbytes = it->nbytes;
         c->store_op = store_op;
         conn_set_state(c, conn_nread);
-    } else if (ret == ENGINE_EWOULDBLOCK) {
+        break;
+    case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
-    } else {
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    default:
         if (ret == ENGINE_E2BIG) {
             out_string(c, "SERVER_ERROR object too large for cache");
         } else {
@@ -3052,6 +3094,9 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         break;
     case ENGINE_NOT_STORED:
         out_string(c, "SERVER_ERROR failed to store item");
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
         break;
     default:
         abort();
