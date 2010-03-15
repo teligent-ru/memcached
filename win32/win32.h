@@ -8,6 +8,7 @@
 #undef  _WIN32_WINNT
 #define _WIN32_WINNT    0x0501        /* Needed to resolve getaddrinfo et al. */
 
+#define FD_SETSIZE 2048
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
