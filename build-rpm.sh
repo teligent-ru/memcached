@@ -32,7 +32,7 @@ rpmtop=$topdir/_rpmbuild
 rm -rf $rpmtop 2>/dev/null
 mkdir -p $rpmtop/{SRPMS,RPMS,BUILD,SOURCES,SPECS}
 
-make install DESTDIR=$rpmtop/BUILD || exit 1
+AM_CFLAGS=-rdynamic make install DESTDIR=$rpmtop/BUILD || exit 1
 
 if [ ! -f $rpmtop/BUILD/usr/local/memcached ] && [ -f $rpmtop/BUILD/usr/bin/memcached ]; then
   echo "** ERROR"
