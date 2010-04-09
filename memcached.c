@@ -4635,6 +4635,28 @@ static bool load_engine(const char *soname, const char *config_str) {
     return true;
 }
 
+/* Adjust the file descriptor limits to reasonable values. */
+static void adjust_file_limits(void) {
+    struct rlimit rlim;
+
+    if (getrlimit(RLIMIT_NOFILE, &rlim) != 0) {
+        fprintf(stderr, "failed to getrlimit number of files\n");
+        exit(EX_OSERR);
+    } else {
+        int maxfiles = settings.maxconns;
+        if (rlim.rlim_cur < maxfiles)
+            rlim.rlim_cur = maxfiles;
+        if (rlim.rlim_max < rlim.rlim_cur)
+            rlim.rlim_max = rlim.rlim_cur;
+        if (setrlimit(RLIMIT_NOFILE, &rlim) != 0) {
+            fprintf(stderr, "failed to set rlimit for open files.\n"
+                    "Try running as root or requesting smaller "
+                    "maxconns value.\n");
+            exit(EX_OSERR);
+        }
+    }
+}
+
 int main (int argc, char **argv) {
     int c;
     bool lock_memory = false;
@@ -4973,21 +4995,7 @@ int main (int argc, char **argv) {
      * If needed, increase rlimits to allow as many connections
      * as needed.
      */
-
-    if (getrlimit(RLIMIT_NOFILE, &rlim) != 0) {
-        fprintf(stderr, "failed to getrlimit number of files\n");
-        exit(EX_OSERR);
-    } else {
-        int maxfiles = settings.maxconns;
-        if (rlim.rlim_cur < maxfiles)
-            rlim.rlim_cur = maxfiles;
-        if (rlim.rlim_max < rlim.rlim_cur)
-            rlim.rlim_max = rlim.rlim_cur;
-        if (setrlimit(RLIMIT_NOFILE, &rlim) != 0) {
-            fprintf(stderr, "failed to set rlimit for open files. Try running as root or requesting smaller maxconns value.\n");
-            exit(EX_OSERR);
-        }
-    }
+    adjust_file_limits();
 
     /* Sanity check for the connection structures */
     int nfiles = 0;
