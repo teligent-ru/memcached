@@ -148,7 +148,7 @@ is('z', $v, 'got the expected value');
 
 my $settings = mem_stats($sock, 'settings');
 
-is('1024', $settings->{'maxconns'});
+is('0', $settings->{'maxconns'});
 is('NULL', $settings->{'domain_socket'});
 is('on', $settings->{'evictions'});
 is('yes', $settings->{'cas_enabled'});

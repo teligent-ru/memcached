@@ -293,7 +293,7 @@ static void settings_init(void) {
     /* By default this string should be NULL for getaddrinfo() */
     settings.inter = NULL;
     settings.maxbytes = 64 * 1024 * 1024; /* default is 64MB */
-    settings.maxconns = 1024;         /* to limit connections-related memory to about 5MB */
+    settings.maxconns = 0;         /* Don't limit conns by default */
     settings.verbose = 0;
     settings.oldest_live = 0;
     settings.evict_to_free = 1;       /* push old items out of cache when memory runs out */
@@ -3603,7 +3603,7 @@ void drive_machine(conn *c) {
                 int curr_conns = stats.curr_conns;
                 STATS_UNLOCK();
 
-                if (curr_conns >= settings.maxconns) {
+                if (settings.maxconns && curr_conns >= settings.maxconns) {
                     STATS_LOCK();
                     ++stats.rejected_conns;
                     STATS_UNLOCK();
@@ -4240,7 +4240,7 @@ static void usage(void) {
            "-u <username> assume identity of <username> (only when run as root)\n"
            "-m <num>      max memory to use for items in megabytes (default: 64 MB)\n"
            "-M            return error on memory exhausted (rather than removing items)\n"
-           "-c <num>      max simultaneous connections (default: 1024)\n"
+           "-c <num>      max simultaneous connections (default: no limit)\n"
            "-k            lock down all paged memory.  Note that there is a\n"
            "              limit on how much memory you may lock.  Trying to\n"
            "              allocate more than that would fail, so be sure you\n"
@@ -4998,8 +4998,8 @@ int main (int argc, char **argv) {
         nfiles += settings.num_threads * 2;
     }
 
-    if (settings.maxconns <= nfiles) {
-        fprintf(stderr, "Configuratioin error. \n"
+    if (settings.maxconns && settings.maxconns <= nfiles) {
+        fprintf(stderr, "Configuration error. \n"
                 "You specified %d connections, but the system will use at "
                 "least %d\nconnection structures to start.\n",
                 settings.maxconns, nfiles);
