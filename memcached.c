@@ -4657,6 +4657,19 @@ static void adjust_file_limits(void) {
     }
 }
 
+void platform_init_unix(void) {
+    /* handle SIGINT */
+    signal(SIGINT, sig_handler);
+}
+
+void platform_init(void) {
+#ifdef __WIN32__
+    platform_init_windows();
+#else
+    platform_init_unix();
+#endif
+}
+
 int main (int argc, char **argv) {
     int c;
     bool lock_memory = false;
@@ -4682,11 +4695,6 @@ int main (int argc, char **argv) {
     const char *engine_config = NULL;
     char old_options[1024] = { [0] = '\0' };
     char *old_opts = old_options;
-
-#ifndef __WIN32__
-    /* handle SIGINT */
-    signal(SIGINT, sig_handler);
-#endif
 
     /* init settings */
     settings_init();
@@ -4964,6 +4972,8 @@ int main (int argc, char **argv) {
     } else if (engine_config == NULL && strlen(old_options) > 0) {
         engine_config = old_options;
     }
+
+    platform_init();
 
     if (maxcore != 0) {
         struct rlimit rlim_new;

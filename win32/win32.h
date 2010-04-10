@@ -196,4 +196,6 @@ int getrusage(int who, struct rusage *usage);
 int kill(int pid, int sig);
 int sleep(int seconds);
 
+void platform_init_windows(void);
+
 #endif

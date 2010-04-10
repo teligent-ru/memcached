@@ -393,3 +393,14 @@ int kill(int pid, int sig) {
         return 0;
     return -1;
 }
+
+void platform_init_windows() {
+    WSADATA wsaData;
+    if (!onceonly) {
+        onceonly = 1;
+        if (WSAStartup(MAKEWORD(2,0), &wsaData) != 0) {
+            fprintf(stderr, "Socket Initialization Error. Program aborted\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
