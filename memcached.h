@@ -45,6 +45,11 @@ void continue_server(void);
 /** Maximum length of a key. */
 #define KEY_MAX_LENGTH 250
 
+/** If not specified, we'll guess from 512k descriptors down */
+#define MAX_MAX_CONNS 524288
+/** Don't guess lower than 256 max conns. */
+#define MIN_MAX_CONNS 64
+
 /** Size of an incr buf. */
 #define INCR_MAX_STORAGE_LEN 24
 

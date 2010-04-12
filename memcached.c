@@ -4635,6 +4635,39 @@ static bool load_engine(const char *soname, const char *config_str) {
     return true;
 }
 
+static bool set_max_files(int maxfiles) {
+    struct rlimit rlim = { .rlim_cur = maxfiles, .rlim_max = maxfiles };
+    return setrlimit(RLIMIT_NOFILE, &rlim) == 0;
+}
+
+static void detect_max_files(void) {
+    // If sysconf works, use that.
+    if ((settings.maxconns = sysconf(_SC_OPEN_MAX)) < 0) {
+        settings.maxconns = 0;
+    }
+
+    // If sysconf fails to work, try to figure it out.
+    for (int i = MAX_MAX_CONNS;
+         settings.maxconns == 0 && i > MIN_MAX_CONNS; i--) {
+
+        if (set_max_files(i)) {
+            settings.maxconns = i;
+        }
+    }
+
+    // If nothing worked, we have to give up.
+    if (!settings.maxconns) {
+        fprintf(stderr,
+                "Could not determine reasonable value for max conns.\n"
+                "Specify one with -c or raise system limits.\n");
+        exit(EX_OSERR);
+    } else {
+        if (settings.verbose) {
+            fprintf(stderr, "Maxconns detected as %d\n", settings.maxconns);
+        }
+    }
+}
+
 /* Adjust the file descriptor limits to reasonable values. */
 static void adjust_file_limits(void) {
     struct rlimit rlim;
@@ -4643,12 +4676,9 @@ static void adjust_file_limits(void) {
         fprintf(stderr, "failed to getrlimit number of files\n");
         exit(EX_OSERR);
     } else {
-        int maxfiles = settings.maxconns;
-        if (rlim.rlim_cur < maxfiles)
-            rlim.rlim_cur = maxfiles;
-        if (rlim.rlim_max < rlim.rlim_cur)
-            rlim.rlim_max = rlim.rlim_cur;
-        if (setrlimit(RLIMIT_NOFILE, &rlim) != 0) {
+        if (settings.maxconns == 0) {
+            detect_max_files();
+        } else if (!set_max_files(settings.maxconns)) {
             fprintf(stderr, "failed to set rlimit for open files.\n"
                     "Try running as root or requesting smaller "
                     "maxconns value.\n");
