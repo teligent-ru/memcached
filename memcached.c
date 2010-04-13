@@ -4641,10 +4641,12 @@ static bool set_max_files(int maxfiles) {
 }
 
 static void detect_max_files(void) {
+#ifndef __WIN32__
     // If sysconf works, use that.
     if ((settings.maxconns = sysconf(_SC_OPEN_MAX)) < 0) {
         settings.maxconns = 0;
     }
+#endif
 
     // If sysconf fails to work, try to figure it out.
     for (int i = MAX_MAX_CONNS;
