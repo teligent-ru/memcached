@@ -4687,10 +4687,12 @@ static void adjust_file_limits(void) {
     }
 }
 
+#ifndef __WIN32__
 void platform_init_unix(void) {
     /* handle SIGINT */
     signal(SIGINT, sig_handler);
 }
+#endif
 
 void platform_init(void) {
 #ifdef __WIN32__

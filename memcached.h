@@ -429,7 +429,9 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status);
 void drive_machine(conn *c);
 
 void platform_init(void);
+#ifndef __WIN32__
 void platform_init_unix(void);
+#endif
 
 void init_check_stdin(struct event_base *base);
 
