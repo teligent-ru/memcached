@@ -526,6 +526,8 @@ hash_item *do_item_get(struct default_engine *engine,
     if (engine->config.verbose > 2)
         fprintf(stderr, "\n");
 
+    do_item_update(engine, it);
+
     return it;
 }
 
