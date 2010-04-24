@@ -508,6 +508,7 @@ hash_item *do_item_get(struct default_engine *engine,
     if (it != NULL) {
         it->refcount++;
         DEBUG_REFCNT(it, '+');
+        do_item_update(engine, it);
     }
 
     if (engine->config.verbose > 2)
