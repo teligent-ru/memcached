@@ -1,0 +1,3 @@
+[submodule "ep-engine"]
+	path = ep-engine
+	url = ssh://bdog-dev-zfeed-01.ec2.zynga.com/git/ep-engine.git
