@@ -199,4 +199,19 @@ int sleep(int seconds);
 
 void platform_init_windows(void);
 
+#ifndef _WIN64
+static inline void _set_errno(int err)
+{
+    errno = err;
+}
+int gettimeofday(struct timeval *timer,
+                         void *ignore);
+#endif
+
+struct sigaction {
+    void (*sa_handler)(int);
+    int sa_mask;
+    int sa_flags;
+};
+
 #endif

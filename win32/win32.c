@@ -401,3 +401,21 @@ void platform_init_windows() {
         exit(EXIT_FAILURE);
     }
 }
+
+/*
+  this is fix the issue of gettimeofday() in mingw-w64 to work
+  The mingw-w64 team has fixed this, but until this is thoroughly 
+  tested, then this fix will suffice
+*/
+#ifdef _WIN64
+int gettimeofday(struct timeval *timer,
+                         void *ignore)
+{
+   
+  timer->tv_sec= time(0);
+  timer->tv_usec= 0; 
+
+  return 0;
+}
+#endif
+  
