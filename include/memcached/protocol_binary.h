@@ -479,7 +479,16 @@ extern "C"
                  * disconnect when the keys stored in the server are transmitted.
                  */
 #define TAP_CONNECT_FLAG_DUMP 0x02
-            } body;
+                /**
+                 * Mark this connection as a push queue for item migration
+                 * after a configuration change.
+                 *
+                 * The first 2 bytes in the engine specific data contains
+                 * the index of the target server. If FLAG_BACKFILL is set,
+                 * the 2 byte index will follow the backfill data.
+                 */
+#define TAP_CONNECT_FLAG_PUSH 0x02
+             } body;
         } message;
         uint8_t bytes[sizeof(protocol_binary_request_header) + 4];
     } protocol_binary_request_tap_connect;

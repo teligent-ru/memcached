@@ -506,6 +506,30 @@ extern "C" {
         bool (*get_item_info)(ENGINE_HANDLE *handle,
                               const item* item,
                               item_info *item_info);
+
+        /**
+         * Callback for new tap connection
+         *
+         * @param handle the engine handle
+         * @param cookie The connection cookie
+         * @param event The event - one of ON_CONNECT, ON_TIMEOUT
+         * @param flags Flags to be sent along with the connection request
+         * @param userdata data to be sent along with the connection request
+         * @param nuserdata size of userdata
+         * @param engine_specific engine specific data set through tap_connect
+         */
+        void (*on_tap_connect)(ENGINE_HANDLE* handle, const void* cookie,
+                               ENGINE_EVENT_TYPE event, uint32_t *flags,
+                               char *userdata, size_t *nuserdata, void *engine_specific);
+
+
+        /**
+         * 1 sec timer 
+         *
+         */
+        void (*clock_handler)(ENGINE_HANDLE* handle);
+
+
     } ENGINE_HANDLE_V1;
 
     /**

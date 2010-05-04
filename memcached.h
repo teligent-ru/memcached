@@ -120,6 +120,7 @@ enum conn_states {
     conn_swallow,    /**< swallowing unnecessary bytes w/o storing */
     conn_closing,    /**< closing this connection */
     conn_mwrite,     /**< writing out many items sequentially */
+    conn_tap_connecting, /**< Tap connection in progress */
     conn_create_tap_connect, /**< Create the tap command message */
     conn_ship_log, /**< Ship replication log */
     conn_add_tap_client, /**< Move the tap client into the tap thread */
@@ -405,7 +406,7 @@ struct conn {
 /*
  * Functions
  */
-conn *conn_new(const int sfd, const enum conn_states init_state, const int event_flags, const int read_buffer_size, enum network_transport transport, struct event_base *base);
+conn *conn_new(const int sfd, const enum conn_states init_state, const int event_flags, const int read_buffer_size, enum network_transport transport, struct event_base *base, struct timeval *timeout);
 extern int daemonize(int nochdir, int noclose);
 
 

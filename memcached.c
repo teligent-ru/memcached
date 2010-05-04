@@ -185,6 +185,10 @@ static enum try_read_result try_read_udp(conn *c);
 
 static void conn_set_state(conn *c, enum conn_states state);
 
+static void remote_on_connect(conn *c);
+static void store_engine_specific(const void *cookie, void *engine_data);
+static void *get_engine_specific(const void *cookie);
+
 /* stats */
 static void stats_init(void);
 static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate);
@@ -580,7 +584,7 @@ static void conn_destructor(void *buffer, void *unused) {
 conn *conn_new(const int sfd, enum conn_states init_state,
                 const int event_flags,
                 const int read_buffer_size, enum network_transport transport,
-                struct event_base *base) {
+                struct event_base *base, struct timeval *timeout) {
     conn *c = cache_alloc(conn_cache);
 
     if (c == NULL) {
@@ -664,7 +668,7 @@ conn *conn_new(const int sfd, enum conn_states init_state,
     event_base_set(base, &c->event);
     c->ev_flags = event_flags;
 
-    if (event_add(&c->event, 0) == -1) {
+    if (event_add(&c->event, timeout) == -1) {
         settings.extensions.logger->log(EXTENSION_LOG_WARNING,
                                         NULL,
                                         "Failed to add connection to libevent: %s", strerror(errno));
@@ -738,27 +742,29 @@ static void conn_close(conn *c) {
     MEMCACHED_CONN_RELEASE(c->sfd);
     close(c->sfd);
 
-    LOCK_THREAD(c->thread);
-    /* remove from pending-io list */
-    conn* pending = c->thread->pending_io;
-    conn* prev = NULL;
-    while (pending) {
-        if (pending == c) {
-            if (settings.verbose > 1) {
-                settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                                "Current connection was in the pending-io list.. Nuking it\n");
+    if (c->thread != NULL) {
+        LOCK_THREAD(c->thread);
+        /* remove from pending-io list */
+        conn* pending = c->thread->pending_io;
+        conn* prev = NULL;
+        while (pending) {
+            if (pending == c) {
+                if (settings.verbose > 1) {
+                    settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
+                                                    "Current connection was in the pending-io list.. Nuking it\n");
+                }
+                if (prev == NULL) {
+                    c->thread->pending_io = c->next;
+                } else {
+                    prev->next = c->next;
+                }
             }
-            if (prev == NULL) {
-                c->thread->pending_io = c->next;
-            } else {
-                prev->next = c->next;
-            }
+            prev = pending;
+            pending = pending->next;
         }
-        prev = pending;
-        pending = pending->next;
-    }
 
-    UNLOCK_THREAD(c->thread);
+        UNLOCK_THREAD(c->thread);
+    }
 
     conn_cleanup(c);
 
@@ -849,6 +855,7 @@ static const char *state_text(enum conn_states state) {
                                        "conn_swallow",
                                        "conn_closing",
                                        "conn_mwrite",
+                                       "conn_tap_connecting",
                                        "conn_create_tap_connect",
                                        "conn_ship_log",
                                        "conn_add_tap_client"};
@@ -2184,26 +2191,50 @@ struct tap_stats {
     struct tap_cmd_stats received;
 } tap_stats = { .mutex = PTHREAD_MUTEX_INITIALIZER };
 
+static void move_conn_to_tap_thread(conn *c, enum conn_states state) {
+    LIBEVENT_THREAD *tp = &tap_thread;
+    c->ewouldblock = true;
+
+    event_del(&c->event);
+
+    LOCK_THREAD(tp);
+    conn_set_state(c, state);
+    c->thread = tp;
+    c->event.ev_base = tp->base;
+    assert(c->next == NULL);
+    c->next = tap_thread.pending_io;
+    tp->pending_io = c;
+    assert(number_of_pending(c, tp->pending_io) == 1);
+    if (write(tp->notify_send_fd, "", 1) != 1) {
+        perror("Writing to tap thread notify pipe");
+    }
+    UNLOCK_THREAD(tp);
+}
+
 static void send_tap_connect(conn *c) {
     protocol_binary_request_tap_connect msg = {
         .message.header.request.magic = (uint8_t)PROTOCOL_BINARY_REQ,
         .message.header.request.opcode = (uint8_t)PROTOCOL_BINARY_CMD_TAP_CONNECT
     };
 
-    char *backfill;
-    uint64_t backfillage;
+    char userdata[DATA_BUFFER_SIZE];
     size_t nuserdata = 0;
+    uint32_t flags = 0;
 
-    if ((backfill = getenv("MEMCACHED_TAP_BACKFILL_AGE")) != NULL) {
-        if (safe_strtoull(backfill, &backfillage)) {
-            msg.message.header.request.extlen = 4;
-            msg.message.body.flags = htonl(TAP_CONNECT_FLAG_BACKFILL);
-            backfillage = ntohll(backfillage);
-            nuserdata = sizeof(backfillage);
-        } else {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                            "Failed to parse backfill age: %s\n", backfill);
-        }
+    void *engine_specific = get_engine_specific((const void *)c);
+    store_engine_specific((const void *)c, NULL);
+    settings.engine.v1->on_tap_connect(settings.engine.v0, c, ON_CONNECT,
+                                       &flags, userdata, &nuserdata, engine_specific);
+
+    if (settings.verbose > 2) {
+        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
+                                        "%d: on_tap_connect - flags: %x, nuserdata: %d\n", 
+                                        c->sfd, flags, (int)nuserdata);
+    }
+
+    if (flags != 0) {
+        msg.message.header.request.extlen = 4;
+        msg.message.body.flags = htonl(flags);
     }
 
     size_t nodelen = 0;
@@ -2237,10 +2268,9 @@ static void send_tap_connect(conn *c) {
     }
 
     if (nuserdata != 0) {
-        if (ntohl(msg.message.body.flags) & TAP_CONNECT_FLAG_BACKFILL) {
-            memcpy(c->wcurr + c->wbytes, &backfillage, sizeof(backfillage));
-            c->wbytes += sizeof(backfillage);
-        }
+        assert(c->wbytes + nuserdata < c->wsize);
+        memcpy(c->wcurr + c->wbytes, userdata, nuserdata);
+        c->wbytes += nuserdata;
     }
 
     conn_set_state(c, conn_write);
@@ -2543,8 +2573,12 @@ static void process_bin_tap_packet(tap_event_t event, conn *c) {
                                          ntohll(tap->message.header.request.cas),
                                          data, ndata);
 
-    /* @todo we don't do acks at this time */
-    conn_set_state(c, conn_new_cmd);
+    if (ret == ENGINE_FAILED) {
+        conn_set_state(c, conn_closing);
+    } else {
+        /* @todo we don't do acks at this time */
+        conn_set_state(c, conn_new_cmd);
+    }
 }
 
 static void process_bin_packet(conn *c) {
@@ -4456,8 +4490,21 @@ void drive_machine(conn *c) {
             stop = true;
             break;
 
+        case conn_tap_connecting:
+            remote_on_connect(c);
+            break;
+
         case conn_create_tap_connect:
-            send_tap_connect(c);
+            if (c->thread != &tap_thread) {
+                if (settings.verbose > 2) {
+                    settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
+                                                    "%d: migrating to tap_thread\n", c->sfd);
+                }
+                move_conn_to_tap_thread(c, conn_create_tap_connect);
+                stop = true;
+            } else { 
+                send_tap_connect(c);
+            }
             break;
 
         case conn_ship_log:
@@ -4743,26 +4790,8 @@ void drive_machine(conn *c) {
             break;
 
         case conn_add_tap_client:
-            {
-                LIBEVENT_THREAD *tp = &tap_thread;
-                c->ewouldblock = true;
-
-                event_del(&c->event);
-
-                LOCK_THREAD(tp);
-                conn_set_state(c, conn_ship_log);
-                c->thread = tp;
-                c->event.ev_base = tp->base;
-                assert(c->next == NULL);
-                c->next = tap_thread.pending_io;
-                tp->pending_io = c;
-                assert(number_of_pending(c, tp->pending_io) == 1);
-                if (write(tp->notify_send_fd, "", 1) != 1) {
-                    perror("Writing to tap thread notify pipe");
-                }
-                UNLOCK_THREAD(tp);
-                stop = true;
-            }
+            move_conn_to_tap_thread(c, conn_ship_log);
+            stop = true;
             break;
 
         case conn_max_state:
@@ -4989,7 +5018,7 @@ static int server_socket(int port, enum network_transport transport,
         } else {
             if (!(listen_conn_add = conn_new(sfd, conn_listening,
                                              EV_READ | EV_PERSIST, 1,
-                                             transport, main_base))) {
+                                             transport, main_base, NULL))) {
                 settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "failed to create listening connection\n");
                 exit(EXIT_FAILURE);
@@ -5008,13 +5037,61 @@ static int server_socket(int port, enum network_transport transport,
     return success == 0;
 }
 
+static void remote_on_connect(conn *c) {
+    assert(c != NULL);
+
+    int error;
+    socklen_t errsz = sizeof(error);
+
+    do {
+        if (c->which == EV_TIMEOUT) {
+            settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
+                                            "%d: connection timed out\n", c->sfd);
+            break;
+        }
+
+        /* Check if the connection completed */
+        if (getsockopt(c->sfd, SOL_SOCKET, SO_ERROR, (void*)&error,
+                   &errsz) == -1) {
+            perror("getsockopt()");
+            break;
+        }
+
+        if (error) {
+            settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
+                                            "%d: connect failed\n", c->sfd);
+            break;
+        }
+
+        /* We are connected to the server now */
+        if (settings.verbose > 2) {
+            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
+                                            "%d: connected\n", c->sfd);
+        }
+
+        conn_set_state(c, conn_create_tap_connect);
+        return;
+
+    } while (0);
+
+    void *engine_specific = get_engine_specific((const void *)c);
+    store_engine_specific((const void *)c, NULL);
+    settings.engine.v1->on_tap_connect(settings.engine.v0, c, ON_TIMEOUT,
+                                       NULL, NULL, NULL, engine_specific);
+
+    conn_set_state(c, conn_closing);
+    update_event(c, 0);
+    return;
+}
+
 /**
  * Create a connection to a remote host
- * @todo document me...
+ * @param remote the server to connect to in host:port format
+ * @param status status of the connection 0: connected, 1: in progress, -1: error
+ * @return the socket descriptor
  */
-static int remote_connection(const char *remote, enum conn_states state) {
-    int ret = -1;
-    int sock;
+static int remote_connection(const char *remote, int *status) {
+    int sock = -1;
     int error;
     int flags;
     struct addrinfo *ai;
@@ -5033,6 +5110,7 @@ static int remote_connection(const char *remote, enum conn_states state) {
         port = (char*)default_port;
     }
 
+    *status = -1;
     error= getaddrinfo(host, port, &hints, &ai);
     if (error != 0) {
         if (error != EAI_SYSTEM) {
@@ -5053,25 +5131,32 @@ static int remote_connection(const char *remote, enum conn_states state) {
             continue;
         }
 
-        if (connect(sock, ai->ai_addr, ai->ai_addrlen) == -1) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                                            "Failed to connect socket: %s\n",
-                                            strerror(errno));
+        if ((flags = fcntl(sock, F_GETFL, 0)) < 0 ||
+            fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0) {
+            perror("setting O_NONBLOCK");
             close(sock);
             sock = -1;
             continue;
         }
 
-        if ((flags = fcntl(sock, F_GETFL, 0)) < 0 ||
-            fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0) {
-            perror("setting O_NONBLOCK");
-            close(sock);
-            continue;
+        if (connect(sock, ai->ai_addr, ai->ai_addrlen) < 0) {
+            if (errno == EINPROGRESS) {
+                *status = 1;
+            } else if (errno == EISCONN) { /* we are connected */
+                *status = 0;
+            } else {
+                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                                "Failed to connect socket: %s\n",
+                                                strerror(errno));
+                close(sock);
+                sock = -1;
+                *status = -1;
+                continue;
+            }
+        } else {
+            *status = 0;
         }
 
-        dispatch_conn_new(sock, state, EV_WRITE |EV_READ | EV_PERSIST,
-                          DATA_BUFFER_SIZE, tcp_transport);
-        ret = 0;
         break;
     }
 
@@ -5080,7 +5165,12 @@ static int remote_connection(const char *remote, enum conn_states state) {
         free(host);
     }
 
-    return ret;
+    settings.extensions.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                                    "Connection to %s - fd: %d, status: %s\n",
+                                    remote, sock, *status == 0? "CONNECTED": 
+                                                  (*status == 1?"IN_PROGRESS": "FAILED"));
+
+    return sock;
 }
 
 static int new_socket_unix(void) {
@@ -5154,7 +5244,7 @@ static int server_socket_unix(const char *path, int access_mask) {
     }
     if (!(listen_conn = conn_new(sfd, conn_listening,
                                  EV_READ | EV_PERSIST, 1,
-                                 local_transport, main_base))) {
+                                 local_transport, main_base, NULL))) {
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
                  "failed to create listening connection\n");
         exit(EXIT_FAILURE);
@@ -5198,6 +5288,9 @@ static void clock_handler(const int fd, const short which, void *arg) {
     evtimer_add(&clockevent, &t);
 
     set_current_time();
+    if (settings.engine.v1->clock_handler != NULL) {
+        settings.engine.v1->clock_handler(settings.engine.v0);
+    }
 }
 
 static void usage(void) {
@@ -5516,6 +5609,34 @@ static void count_eviction(const void *cookie, const void *key, const int nkey) 
     TK(tk, evictions, key, nkey, get_current_time());
 }
 
+static int tap_connect(const char *remote, int conn_timeout, void *engine_specific) {
+    int sock = -1;
+    int status = -1;
+
+    if ((sock = remote_connection(remote, &status)) == -1) {
+        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                        "Failed connecting to: %s\n", remote);
+    } else {
+        assert(status >= 0);
+        struct timeval timeout = { .tv_sec = conn_timeout/1000, 
+                                   .tv_usec = (conn_timeout % 1000) * 1000 };
+        conn *c = conn_new(sock, status == 0? conn_create_tap_connect: conn_tap_connecting,
+                           EV_WRITE | EV_READ | EV_PERSIST,
+                           DATA_BUFFER_SIZE,
+                           tcp_transport,
+                           main_base,
+                           status == 0? NULL: &timeout);
+        if (c != NULL) {
+            store_engine_specific((const void *)c, engine_specific);
+            return 0;
+        }
+
+    }
+
+    return -1;
+}
+
+
 /**
  * To make it easy for engine implementors that doesn't want to care about
  * writing their own incr/decr code, they can just set the arithmetic function
@@ -5737,7 +5858,8 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .realtime = realtime,
         .notify_io_complete = notify_io_complete,
         .get_current_time = get_current_time,
-        .parse_config = parse_config
+        .parse_config = parse_config,
+        .tap_connect = tap_connect
     };
 
     static SERVER_STAT_API server_stat_api = {
@@ -6381,13 +6503,7 @@ int main (int argc, char **argv) {
     /* initialize main thread libevent instance */
     main_base = event_init();
 
-    /* Load the storage engine */
-    if (!load_engine(engine, engine_config)) {
-        /* Error already reported */
-        exit(EXIT_FAILURE);
-    }
-
-    /* initialize other stuff */
+   /* initialize other stuff */
     stats_init();
 
     if (!(conn_cache = cache_create("conn", sizeof(conn), sizeof(void*),
@@ -6411,6 +6527,13 @@ int main (int argc, char **argv) {
     }
 #endif
 
+    /* Load the storage engine */
+    if (!load_engine(engine, engine_config)) {
+        /* Error already reported */
+        exit(EXIT_FAILURE);
+    }
+
+ 
     /* start up worker threads if MT mode */
     thread_init(settings.num_threads, main_base);
     /* save the PID in if we're a daemon, do this after thread_init due to
@@ -6477,29 +6600,29 @@ int main (int argc, char **argv) {
         }
     }
 
-    if (overlord) {
 #ifndef __WIN32__
-        struct utsname utsname;
-        if (uname(&utsname) != -1) {
-            char port[12];
-            snprintf(port, sizeof(port), ":%u", settings.port);
-            nodeid = malloc(strlen(utsname.nodename) + strlen(port) + 1);
-            if (nodeid) {
-                sprintf(nodeid, "%s%s", utsname.nodename, port);
-            }
-        } else {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                                            "Failed to get uname: %s\n", strerror(errno));
+    struct utsname utsname;
+    if (uname(&utsname) != -1) {
+        char port[12];
+        snprintf(port, sizeof(port), ":%u", settings.port);
+        nodeid = malloc(strlen(utsname.nodename) + strlen(port) + 1);
+        if (nodeid) {
+            sprintf(nodeid, "%s%s", utsname.nodename, port);
         }
+    } else {
+        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                        "Failed to get uname: %s\n", strerror(errno));
+    }
 
-        if (remote_connection(overlord, conn_create_tap_connect) == -1) {
+    if (overlord) {
+        if (tap_connect(overlord, 30000, NULL) < 0) {
             settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
                                             "Failed to start tap consumer\n");
         }
         // @TODO we need an observer to determine when the socket close and
         // when to switch state
-#endif
     }
+#endif
 
     /* Drop privileges no longer needed */
     drop_privileges();
