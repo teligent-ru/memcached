@@ -51,6 +51,13 @@ fi
 install -Dp -m0755 scripts/memcached-tool $rpmtop/BUILD/usr/local/bin/memcached-tool
 install -Dp -m0755 scripts/memcached.sysv $rpmtop/BUILD/etc/rc.d/init.d/memcached
 
+mgmt=ep-engine/management
+install -Dp -m0755 $mgmt/backup.py $rpmtop/BUILD/usr/local/memcached/backup.py
+install -Dp -m0755 $mgmt/flushctl.py $rpmtop/BUILD/usr/local/memcached/flushctl.py
+install -Dp -m0755 $mgmt/tapctl.py $rpmtop/BUILD/usr/local/memcached/tapctl.py
+install -Dp -m0644 $mgmt/mc_bin_client.py $rpmtop/BUILD/usr/local/memcached/mc_bin_client.py
+install -Dp -m0644 $mgmt/memcacheConstants.py $rpmtop/BUILD/usr/local/memcached/memcacheConstants.py
+
 rpmbuild --define="_topdir $rpmtop" -ba $specfile && cp $rpmtop/RPMS/`uname -p`/*.rpm . && rm -rf $rpmtop 2>/dev/null
 
 

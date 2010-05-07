@@ -73,6 +73,7 @@ exit 0
 /usr/local/man/man1/memcached.1*
 /usr/local/include/memcached
 /usr/local/lib/*
+/usr/local/memcached/*
 
 %changelog
 * Wed Feb  3 2010 Jayesh Jose <jjose@zynga.com>  - 0.0.1
