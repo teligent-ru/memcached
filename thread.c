@@ -379,14 +379,14 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     LIBEVENT_THREAD *thr = conn->thread;
 
     LOCK_THREAD(thr);
-    assert(thr == conn->thread);
-    // This means we're calling notify_io_complete too frequently and
-    // have nothing to do.
-    if (conn->next != NULL) {
-        UNLOCK_THREAD(thr);
+    if (thr != conn->thread || conn->state == conn_closing) {
         return;
     }
+
+    int notify = 0;
     if (number_of_pending(conn, thr->pending_io) == 0) {
+        if (thr->pending_io == NULL) notify = 1;
+
         conn->next = thr->pending_io;
         thr->pending_io = conn;
     }
@@ -394,7 +394,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     UNLOCK_THREAD(thr);
 
     /* kick the thread in the butt */
-    if (write(thr->notify_send_fd, "", 1) != 1) {
+    if (notify && write(thr->notify_send_fd, "", 1) != 1) {
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
                                         "Writing to thread notify pipe: %s",
                                         strerror(errno));
