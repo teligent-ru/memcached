@@ -9,12 +9,23 @@
 #include "config.h"
 #endif
 
-#include <sys/types.h>
+#ifdef WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <netinet/in.h>
-#include <event.h>
 #include <netdb.h>
+#include <pwd.h>
+#include <sys/mman.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#endif
+
+#include <stdbool.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <event.h>
 #include <pthread.h>
 #include <unistd.h>
 
