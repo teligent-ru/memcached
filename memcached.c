@@ -3935,6 +3935,7 @@ static int new_socket_unix(void) {
     return sfd;
 }
 
+#ifndef WIN32
 static int server_socket_unix(const char *path, int access_mask) {
     int sfd;
     struct linger ling = {0, 0};
@@ -3994,6 +3995,7 @@ static int server_socket_unix(const char *path, int access_mask) {
 
     return 0;
 }
+#endif
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -4250,8 +4252,17 @@ int main (int argc, char **argv) {
     int maxcore = 0;
     char *username = NULL;
     char *pid_file = NULL;
+#ifdef WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2,0), &wsaData) != 0) {
+        fprintf(stderr, "Socket Initialization Error. Program aborted\n");
+        exit(EXIT_FAILURE);
+    }
+#else
     struct passwd *pw;
     struct rlimit rlim;
+#endif
+
     char unit = '\0';
     int size_max = 0;
     /* listening sockets */
@@ -4485,6 +4496,7 @@ int main (int argc, char **argv) {
         settings.port = settings.udpport;
     }
 
+#ifndef WIN32
     if (maxcore != 0) {
         struct rlimit rlim_new;
         /*
@@ -4515,7 +4527,6 @@ int main (int argc, char **argv) {
      * If needed, increase rlimits to allow as many connections
      * as needed.
      */
-
     if (getrlimit(RLIMIT_NOFILE, &rlim) != 0) {
         fprintf(stderr, "failed to getrlimit number of files\n");
         exit(EX_OSERR);
@@ -4546,6 +4557,7 @@ int main (int argc, char **argv) {
             exit(EX_OSERR);
         }
     }
+#endif
 
     /* Initialize Sasl if -S was specified */
     if (settings.sasl) {
@@ -4586,6 +4598,7 @@ int main (int argc, char **argv) {
     conn_init();
     slabs_init(settings.maxbytes, settings.factor, preallocate);
 
+#ifndef WIN32
     /*
      * ignore SIGPIPE signals; we can use errno == EPIPE if we
      * need that information
@@ -4594,6 +4607,8 @@ int main (int argc, char **argv) {
         perror("failed to ignore SIGPIPE; sigaction");
         exit(EX_OSERR);
     }
+#endif
+
     /* start up worker threads if MT mode */
     thread_init(settings.num_threads, main_base);
     /* save the PID in if we're a daemon, do this after thread_init due to
@@ -4608,6 +4623,7 @@ int main (int argc, char **argv) {
     /* initialise clock event */
     clock_handler(0, 0, 0);
 
+#ifndef WIN32
     /* create unix mode sockets after dropping privileges */
     if (settings.socketpath != NULL) {
         errno = 0;
@@ -4616,6 +4632,7 @@ int main (int argc, char **argv) {
             exit(EX_OSERR);
         }
     }
+#endif
 
     /* create the listening socket, bind it, and init */
     if (settings.socketpath == NULL) {

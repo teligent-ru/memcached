@@ -314,11 +314,19 @@ void dispatch_conn_new(int sfd, enum conn_states init_state, int event_flags,
     }
 }
 
+static bool compare_pthread_t(pthread_t a, pthread_t b) {
+#ifdef WIN32
+    return a.p == b.p && a.x == b.x;
+#else
+    return a == b;
+#endif
+}
+
 /*
  * Returns true if this is the thread that listens for new TCP connections.
  */
 int is_listen_thread() {
-    return pthread_self() == dispatcher_thread.thread_id;
+    return compare_pthread_t(pthread_self(), dispatcher_thread.thread_id);
 }
 
 /********************************* ITEM ACCESS *******************************/
@@ -606,18 +614,36 @@ void thread_init(int nthreads, struct event_base *main_base) {
     dispatcher_thread.base = main_base;
     dispatcher_thread.thread_id = pthread_self();
 
+#ifdef WIN32
+    struct sockaddr_in serv_addr;
+    int sockfd;
+
+    if ((sockfd = createLocalListSock(&serv_addr)) < 0)
+        exit(1);
+#endif
+
+
     for (i = 0; i < nthreads; i++) {
         int fds[2];
+#ifdef WIN32
+        if (createLocalSocketPair(sockfd,fds,&serv_addr) == -1) {
+            fprintf(stderr, "Can't create notify pipe: %s", strerror(errno));
+            exit(1);
+        }
+#else
         if (pipe(fds)) {
             perror("Can't create notify pipe");
             exit(1);
         }
-
+#endif
         threads[i].notify_receive_fd = fds[0];
         threads[i].notify_send_fd = fds[1];
 
         setup_thread(&threads[i]);
     }
+#ifdef WIN32
+    shutdown(sockfd, 2);
+#endif
 
     /* Create threads after we've done all the libevent setup. */
     for (i = 0; i < nthreads; i++) {
