@@ -320,11 +320,30 @@ const void *create_mock_cookie(void) {
     assert(pthread_mutex_init(&rv->mutex, NULL) == 0);
     assert(pthread_cond_init(&rv->cond, NULL) == 0);
 
+    mock_perform_callbacks(ON_CONNECT, NULL, rv);
     return rv;
 }
 
 void destroy_mock_cookie(const void *cookie) {
+    struct mock_connstruct *mc = (struct mock_connstruct *)cookie;
+
+    mock_perform_callbacks(ON_DISCONNECT, NULL, cookie);
+    assert(pthread_mutex_destroy(&mc->mutex) == 0);
+    assert(pthread_cond_destroy(&mc->cond) == 0);
+    free((void*)mc->uname);
+    free((void*)mc->config);
     free((void*)cookie);
+}
+
+void auth_mock_cookie(const void *cookie, const char *auth, const char *config) {
+    struct mock_connstruct *mc = (struct mock_connstruct *)cookie;
+    auth_data_t ad;
+    mc->uname = auth ? strdup(auth) : NULL;
+    mc->config = config ? strdup(config) : NULL;
+    if (mc->uname) {
+        mock_get_auth_data(mc, &ad);
+        mock_perform_callbacks(ON_AUTH, (const void*)&ad, mc);
+    }
 }
 
 void mock_set_ewouldblock_handling(const void *cookie, bool enable) {

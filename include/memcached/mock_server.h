@@ -41,6 +41,9 @@ MEMCACHED_PUBLIC_API
 struct mock_connstruct *mk_mock_connection(const char *user,
                                            const char *config);
 
+MEMCACHED_PUBLIC_API
+void auth_mock_cookie(const void *cookie, const char *auth, const char *config);
+
 MEMCACHED_PUBLIC_API const void *create_mock_cookie(void);
 
 MEMCACHED_PUBLIC_API void destroy_mock_cookie(const void *cookie);

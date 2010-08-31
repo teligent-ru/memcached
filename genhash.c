@@ -7,7 +7,7 @@
 #include <math.h>
 #include <assert.h>
 
-#include <memcached/genhash.h>
+#include "genhash.h"
 #include "genhash_int.h"
 
 /* Table of 32 primes by their distance from the nearest power of two */

@@ -27,6 +27,7 @@ struct test_harness {
     void (*lock_cookie)(const void *cookie);
     void (*unlock_cookie)(const void *cookie);
     void (*waitfor_cookie)(const void *cookie);
+    void (*auth_cookie)(const void *cookie, const char *auth, const char *config);
 };
 
 typedef struct test {

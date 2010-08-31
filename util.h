@@ -14,15 +14,15 @@
 extern "C" {
 #endif
 
-MEMCACHED_PUBLIC_API bool safe_strtoull(const char *str, uint64_t *out);
-MEMCACHED_PUBLIC_API bool safe_strtoll(const char *str, int64_t *out);
-MEMCACHED_PUBLIC_API bool safe_strtoul(const char *str, uint32_t *out);
-MEMCACHED_PUBLIC_API bool safe_strtol(const char *str, int32_t *out);
-MEMCACHED_PUBLIC_API bool safe_strtof(const char *str, float *out);
+bool safe_strtoull(const char *str, uint64_t *out);
+bool safe_strtoll(const char *str, int64_t *out);
+bool safe_strtoul(const char *str, uint32_t *out);
+bool safe_strtol(const char *str, int32_t *out);
+bool safe_strtof(const char *str, float *out);
 
 #ifndef HAVE_HTONLL
-MEMCACHED_PUBLIC_API extern uint64_t htonll(uint64_t);
-MEMCACHED_PUBLIC_API extern uint64_t ntohll(uint64_t);
+extern uint64_t htonll(uint64_t);
+extern uint64_t ntohll(uint64_t);
 #endif
 
 #ifdef __GCC

@@ -21,7 +21,7 @@
 
 #include "config.h"
 #include "cache.h"
-#include <memcached/util.h>
+#include "util.h"
 #include <memcached/protocol_binary.h>
 #include <memcached/config_parser.h>
 

@@ -11,13 +11,11 @@ pkginclude_HEADERS = \
                      include/memcached/engine_testapp.h \
                      include/memcached/extension.h \
                      include/memcached/extension_loggers.h \
-                     include/memcached/genhash.h \
                      include/memcached/mock_server.h \
                      include/memcached/protocol_binary.h \
                      include/memcached/protocol_plugin.h \
                      include/memcached/server_api.h \
                      include/memcached/types.h \
-                     include/memcached/util.h \
                      include/memcached/vbucket.h \
                      include/memcached/visibility.h
 
@@ -53,10 +51,11 @@ libmcd_util_la_SOURCES= \
                         engine_loader.h engine_loader.c \
                         extension_loggers.c \
                         genhash.c \
+                        genhash.h \
                         genhash_int.h \
                         include/memcached/config_parser.h \
                         include/memcached/genhash.h \
-                        include/memcached/util.h \
+                        util.h \
                         mock_server.c \
                         util.c
 

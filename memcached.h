@@ -415,7 +415,7 @@ extern int daemonize(int nochdir, int noclose);
 #include "stats.h"
 #include "trace.h"
 #include "hash.h"
-#include <memcached/util.h>
+#include "util.h"
 
 /*
  * Functions such as the libevent-related calls that need to do cross-thread

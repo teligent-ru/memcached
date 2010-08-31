@@ -14,8 +14,8 @@
 #include <stdbool.h>
 
 #include <memcached/engine.h>
-#include <memcached/util.h>
 #include <memcached/visibility.h>
+#include "util.h"
 
 /* Slab sizing definitions. */
 #define POWER_SMALLEST 1

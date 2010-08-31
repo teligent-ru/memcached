@@ -10,7 +10,6 @@
 #include <arpa/inet.h>
 
 #include "default_engine.h"
-#include <memcached/util.h>
 #include <memcached/config_parser.h>
 
 #define CMD_SET_VBUCKET 0x83
