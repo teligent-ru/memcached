@@ -499,14 +499,106 @@ static tap_event_t tap_always_disconnect(ENGINE_HANDLE *e,
     return TAP_DISCONNECT;
 }
 
+struct vbucket_state_op {
+    uint16_t vbid;
+    uint32_t state;
+};
+
+struct vbucket_list {
+    size_t n_ops;
+    size_t current_op;
+    struct vbucket_state_op ops[];
+};
+
+static struct vbucket_list *parse_vbucket_list(struct default_engine *e,
+                                               const void *cookie,
+                                               const void* userdata,
+                                               size_t nuserdata) {
+    uint16_t nvbuckets;
+    assert(nuserdata >= sizeof(nvbuckets));
+    const char *ptr = (const char*)userdata;
+    memcpy(&nvbuckets, ptr, sizeof(nvbuckets));
+    nuserdata -= sizeof(nvbuckets);
+
+    struct vbucket_list *rv = calloc(1, sizeof(struct vbucket_list)
+                                     + (nvbuckets * 2
+                                        * sizeof(struct vbucket_state_op)));
+    assert(rv);
+
+    ptr += sizeof(nvbuckets);
+    nvbuckets = ntohs(nvbuckets);
+    rv->n_ops = nvbuckets * 2;
+
+    if (nvbuckets > 0) {
+        assert(nuserdata >= (sizeof(uint16_t) * nvbuckets));
+        for (uint16_t i = 0; i < nvbuckets; ++i) {
+            uint16_t val;
+            memcpy(&val, ptr, sizeof(nvbuckets));
+            ptr += sizeof(uint16_t);
+            val = ntohs(val);
+
+            // Encode -> pending state
+            rv->ops[i].vbid = val;
+            rv->ops[i].state = htonl(pending);
+
+            // Encode -> active state
+            rv->ops[i+nvbuckets].vbid = val;
+            rv->ops[i+nvbuckets].state = htonl(active);
+
+            set_vbucket_state(e, val, VBUCKET_STATE_DEAD);
+        }
+    }
+
+    return rv;
+}
+
+static tap_event_t tap_takeover_vbuckets(ENGINE_HANDLE *handle,
+                                         const void *cookie, item **itm, void **es,
+                                         uint16_t *nes, uint8_t *ttl, uint16_t *flags,
+                                         uint32_t *seqno, uint16_t *vbucket) {
+    struct default_engine* e = get_handle(handle);
+    struct vbucket_list *list =
+        e->get_server_api()->core->get_engine_specific(cookie);
+    if (!list) {
+        return TAP_DISCONNECT;
+    }
+
+    tap_event_t rv = TAP_NOOP;
+    if (list->current_op < list->n_ops) {
+        *vbucket = list->ops[list->current_op].vbid;
+        *flags = 0;
+        *ttl = 1;
+        *es = &list->ops[list->current_op].state;
+        *nes = sizeof(list->ops[list->current_op].state);
+        *itm = NULL;
+
+        ++list->current_op;
+
+        rv = TAP_VBUCKET_SET;
+    } else {
+        free(list);
+        e->get_server_api()->core->store_engine_specific(cookie, NULL);
+        rv = TAP_DISCONNECT;
+    }
+    return rv;
+}
+
 static TAP_ITERATOR get_tap_iterator(ENGINE_HANDLE* handle, const void* cookie,
                                      const void* client, size_t nclient,
                                      uint32_t flags,
                                      const void* userdata, size_t nuserdata) {
+    struct default_engine* e = get_handle(handle);
+    assert(e);
+
     TAP_ITERATOR rv = tap_always_pause;
-    if ((flags & TAP_CONNECT_FLAG_DUMP)
-        || (flags & TAP_CONNECT_FLAG_TAKEOVER_VBUCKETS)) {
+    if (flags & TAP_CONNECT_FLAG_DUMP) {
         rv = tap_always_disconnect;
+    } else if (flags & TAP_CONNECT_FLAG_TAKEOVER_VBUCKETS) {
+        struct vbucket_list *list = parse_vbucket_list(e, cookie,
+                                                       userdata, nuserdata);
+        assert(list);
+        rv = tap_takeover_vbuckets;
+        e->get_server_api()->core->store_engine_specific(cookie, list);
     }
     return rv;
 }
