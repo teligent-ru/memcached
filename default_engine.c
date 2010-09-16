@@ -76,6 +76,22 @@ static TAP_ITERATOR get_tap_iterator(ENGINE_HANDLE* handle, const void* cookie,
                                      const void* client, size_t nclient,
                                      uint32_t flags,
                                      const void* userdata, size_t nuserdata);
+static ENGINE_ERROR_CODE do_tap_notify(ENGINE_HANDLE* handle,
+                                       const void *cookie,
+                                       void *engine_specific,
+                                       uint16_t nengine,
+                                       uint8_t ttl,
+                                       uint16_t tap_flags,
+                                       tap_event_t tap_event,
+                                       uint32_t tap_seqno,
+                                       const void *key,
+                                       size_t nkey,
+                                       uint32_t flags,
+                                       uint32_t exptime,
+                                       uint64_t cas,
+                                       const void *data,
+                                       size_t ndata,
+                                       uint16_t vbucket);
 static ENGINE_ERROR_CODE default_unknown_command(ENGINE_HANDLE* handle,
                                                  const void* cookie,
                                                  protocol_binary_request_header *request,
@@ -152,7 +168,8 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface,
          .unknown_command = default_unknown_command,
          .item_set_cas = item_set_cas,
          .get_item_info = get_item_info,
-         .get_tap_iterator = get_tap_iterator
+         .get_tap_iterator = get_tap_iterator,
+         .tap_notify = do_tap_notify
       },
       .server = *api,
       .get_server_api = get_server_api,
@@ -599,6 +616,59 @@ static TAP_ITERATOR get_tap_iterator(ENGINE_HANDLE* handle, const void* cookie,
         assert(list);
         rv = tap_takeover_vbuckets;
         e->get_server_api()->core->store_engine_specific(cookie, list);
+    }
+    return rv;
+}
+
+static ENGINE_ERROR_CODE do_tap_notify(ENGINE_HANDLE* handle,
+                                       const void *cookie,
+                                       void *engine_specific,
+                                       uint16_t nengine,
+                                       uint8_t ttl,
+                                       uint16_t tap_flags,
+                                       tap_event_t tap_event,
+                                       uint32_t tap_seqno,
+                                       const void *key,
+                                       size_t nkey,
+                                       uint32_t flags,
+                                       uint32_t exptime,
+                                       uint64_t cas,
+                                       const void *data,
+                                       size_t ndata,
+                                       uint16_t vbucket) {
+    struct default_engine* e = get_handle(handle);
+    ENGINE_ERROR_CODE rv = ENGINE_SUCCESS;
+    switch (tap_event) {
+    case TAP_VBUCKET_SET:
+        if (nengine != sizeof(vbucket_state_t)) {
+            // illegal datasize
+            return ENGINE_DISCONNECT;
+        }
+
+        vbucket_state_t state;
+        memcpy(&state, engine_specific, nengine);
+
+        state = (vbucket_state_t)ntohl(state);
+
+        if (!is_valid_vbucket_state_t(state)) {
+            return ENGINE_DISCONNECT;
+        }
+
+        set_vbucket_state(e, vbucket, state);
+        break;
+    case TAP_DISCONNECT:
+        rv = ENGINE_DISCONNECT;
+        break;
+    case TAP_MUTATION:
+    case TAP_DELETION:
+    case TAP_FLUSH:
+    case TAP_OPAQUE:
+    case TAP_ACK:
+    case TAP_NOOP:
+    case TAP_PAUSE:
+        /* All these fall through, but are noted here as unhandled
+           cases */
+        break;
     }
     return rv;
 }
