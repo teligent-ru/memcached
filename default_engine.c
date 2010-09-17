@@ -575,7 +575,7 @@ static tap_event_t tap_takeover_vbuckets(ENGINE_HANDLE *handle,
                                          uint32_t *seqno, uint16_t *vbucket) {
     struct default_engine* e = get_handle(handle);
     struct vbucket_list *list =
-        e->get_server_api()->core->get_engine_specific(cookie);
+        e->get_server_api()->cookie->get_engine_specific(cookie);
     if (!list) {
         return TAP_DISCONNECT;
     }
@@ -594,7 +594,7 @@ static tap_event_t tap_takeover_vbuckets(ENGINE_HANDLE *handle,
         rv = TAP_VBUCKET_SET;
     } else {
         free(list);
-        e->get_server_api()->core->store_engine_specific(cookie, NULL);
+        e->get_server_api()->cookie->store_engine_specific(cookie, NULL);
         rv = TAP_DISCONNECT;
     }
     return rv;
@@ -615,7 +615,7 @@ static TAP_ITERATOR get_tap_iterator(ENGINE_HANDLE* handle, const void* cookie,
                                                        userdata, nuserdata);
         assert(list);
         rv = tap_takeover_vbuckets;
-        e->get_server_api()->core->store_engine_specific(cookie, list);
+        e->get_server_api()->cookie->store_engine_specific(cookie, list);
     }
     return rv;
 }
