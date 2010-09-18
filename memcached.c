@@ -1112,6 +1112,9 @@ static void complete_update_ascii(conn *c) {
         case ENGINE_ENOMEM:
             out_string(c, "SERVER_ERROR out of memory");
             break;
+        case ENGINE_TMPFAIL:
+            out_string(c, "SERVER_ERROR temporary failure");
+            break;
         case ENGINE_EINVAL:
             out_string(c, "CLIENT_ERROR invalid arguments");
             break;
@@ -1314,6 +1317,8 @@ static protocol_binary_response_status engine_error_2_protocol_error(ENGINE_ERRO
         return PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS;
     case ENGINE_ENOMEM:
         return PROTOCOL_BINARY_RESPONSE_ENOMEM;
+    case ENGINE_TMPFAIL:
+        return PROTOCOL_BINARY_RESPONSE_ETMPFAIL;
     case ENGINE_NOT_STORED:
         return PROTOCOL_BINARY_RESPONSE_NOT_STORED;
     case ENGINE_EINVAL:
@@ -1341,6 +1346,9 @@ static void write_bin_packet(conn *c, protocol_binary_response_status err, int s
         break;
     case PROTOCOL_BINARY_RESPONSE_ENOMEM:
         len = snprintf(buffer, sizeof(buffer), "Out of memory");
+        break;
+    case PROTOCOL_BINARY_RESPONSE_ETMPFAIL:
+        len = snprintf(buffer, sizeof(buffer), "Temporary failure");
         break;
     case PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND:
         len = snprintf(buffer, sizeof(buffer), "Unknown command");
@@ -1499,6 +1507,9 @@ static void complete_incr_bin(conn *c) {
     case ENGINE_ENOMEM:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         break;
+    case ENGINE_TMPFAIL:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ETMPFAIL, 0);
+        break;
     case ENGINE_EINVAL:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_DELTA_BADVAL, 0);
         break;
@@ -1585,6 +1596,9 @@ static void complete_update_bin(conn *c) {
         break;
     case ENGINE_ENOMEM:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        break;
+    case ENGINE_TMPFAIL:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ETMPFAIL, 0);
         break;
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
@@ -1923,6 +1937,9 @@ static void process_bin_stat(conn *c) {
         break;
     case ENGINE_ENOMEM:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        break;
+    case ENGINE_TMPFAIL:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ETMPFAIL, 0);
         break;
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -4106,6 +4123,9 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         break;
     case ENGINE_ENOMEM:
         out_string(c, "SERVER_ERROR out of memory");
+        break;
+    case ENGINE_TMPFAIL:
+        out_string(c, "SERVER_ERROR temporary failure");
         break;
     case ENGINE_EINVAL:
         out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
