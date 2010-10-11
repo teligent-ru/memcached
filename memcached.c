@@ -4580,8 +4580,11 @@ static int try_read_command(conn *c) {
 
         assert(cont <= (c->rcurr + c->rbytes));
 
+        LIBEVENT_THREAD *thread = c->thread;
+        LOCK_THREAD(thread);
         left = process_command(c, c->rcurr);
-
+        UNLOCK_THREAD(thread);
+        
         if (left != NULL) {
             /* 
              * We have not processed the entire command. This happens
