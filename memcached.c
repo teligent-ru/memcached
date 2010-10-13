@@ -187,7 +187,6 @@ static void settings_init(void);
 
 /* event handling, network IO */
 static void event_handler(const int fd, const short which, void *arg);
-static bool update_event(conn *c, const int new_flags);
 static void complete_nread(conn *c);
 static char *process_command(conn *c, char *command);
 static void write_and_free(conn *c, char *buf, int bytes);
@@ -549,7 +548,6 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
                 const int read_buffer_size, enum network_transport transport,
                 struct event_base *base, struct timeval *timeout) {
     conn *c = cache_alloc(conn_cache);
-
     if (c == NULL) {
         return NULL;
     }
@@ -636,10 +634,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     event_base_set(base, &c->event);
     c->ev_flags = event_flags;
 
-    if (event_add(&c->event, timeout) == -1) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING,
-                                        NULL,
-                                        "Failed to add connection to libevent: %s", strerror(errno));
+    if (!register_event(c, timeout)) {
         assert(c->thread == NULL);
         cache_free(conn_cache, c);
         return NULL;
@@ -706,7 +701,7 @@ void conn_close(conn *c) {
     /* delete the event, the socket and the conn */
     if (c->sfd != -1) {
         MEMCACHED_CONN_RELEASE(c->sfd);
-        event_del(&c->event);
+        unregister_event(c);
 
         if (settings.verbose > 1) {
             settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
@@ -4583,6 +4578,9 @@ static int try_read_command(conn *c) {
         LIBEVENT_THREAD *thread = c->thread;
         LOCK_THREAD(thread);
         left = process_command(c, c->rcurr);
+        if (c->ewouldblock) {
+            unregister_event(c);
+        }
         UNLOCK_THREAD(thread);
 
         if (left != NULL) {
@@ -4725,7 +4723,44 @@ static enum try_read_result try_read_network(conn *c) {
     return gotdata;
 }
 
-static bool update_event(conn *c, const int new_flags) {
+bool register_event(conn *c, struct timeval *timeout) {
+#ifdef DEBUG
+    assert(!c->registered_in_libevent);
+#endif
+
+    if (event_add(&c->event, timeout) == -1) {
+        settings.extensions.logger->log(EXTENSION_LOG_WARNING,
+                                        NULL,
+                                        "Failed to add connection to libevent: %s",
+                                        strerror(errno));
+        return false;
+    }
+
+#ifdef DEBUG
+    c->registered_in_libevent = true;
+#endif
+
+    return true;
+}
+
+bool unregister_event(conn *c) {
+#ifdef DEBUG
+    assert(c->registered_in_libevent);
+#endif
+
+    if (event_del(&c->event) == -1) {
+        return false;
+    }
+
+#ifdef DEBUG
+    c->registered_in_libevent = false;
+#endif
+
+    return true;
+}
+
+
+bool update_event(conn *c, const int new_flags) {
     assert(c != NULL);
 
     struct event_base *base = c->event.ev_base;
@@ -4737,12 +4772,15 @@ static bool update_event(conn *c, const int new_flags) {
                                     c->sfd, (new_flags & EV_READ ? "yes" : "no"),
                                     (new_flags & EV_WRITE ? "yes" : "no"));
 
-    if (event_del(&c->event) == -1) return false;
+    if (!unregister_event(c)) {
+        return false;
+    }
+
     event_set(&c->event, c->sfd, new_flags, event_handler, (void *)c);
     event_base_set(base, &c->event);
     c->ev_flags = new_flags;
-    if (event_add(&c->event, 0) == -1) return false;
-    return true;
+
+    return register_event(c, NULL);
 }
 
 /*
@@ -4883,7 +4921,7 @@ bool conn_ship_log(conn *c) {
 
     if (c->pending_close.active) {
         // Remove the event if it is present..
-        event_del(&c->event);
+        unregister_event(c);
         return false;
     }
 
@@ -4963,10 +5001,6 @@ bool conn_parse_cmd(conn *c) {
     if (try_read_command(c) == 0) {
         /* wee need more data! */
         conn_set_state(c, conn_waiting);
-    }
-
-    if (c->ewouldblock) {
-        event_del(&c->event);
     }
 
     return !c->ewouldblock;
@@ -5063,7 +5097,7 @@ bool conn_nread(conn *c) {
         t = c->thread;
         LOCK_THREAD(t);
         if (c->ewouldblock) {
-            event_del(&c->event);
+            unregister_event(c);
             block = true;
         }
         UNLOCK_THREAD(t);
@@ -5204,8 +5238,8 @@ bool conn_mwrite(conn *c) {
 bool conn_pending_close(conn *c) {
     assert(!c->pending_close.active);
     assert(c->sfd != -1);
-    settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                    "Tap client connect closed (%d)."
+    settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
+                                    "Tap client connection closed (%d)."
                                     " Putting it (%p) in pending close\n",
                                     c->sfd, (void*)c);
     LOCK_THREAD(c->thread);
@@ -5218,7 +5252,7 @@ bool conn_pending_close(conn *c) {
     UNLOCK_THREAD(c->thread);
 
     // We don't want any network notifications anymore..
-    event_del(&c->event);
+    unregister_event(c);
     safe_close(c->sfd);
     c->sfd = -1;
 
@@ -5264,7 +5298,7 @@ bool conn_add_tap_client(conn *c) {
 
     c->ewouldblock = true;
 
-    event_del(&c->event);
+    unregister_event(c);
 
     LOCK_THREAD(orig_thread);
     /* Clean out the lists */
