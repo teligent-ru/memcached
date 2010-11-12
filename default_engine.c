@@ -284,7 +284,8 @@ static ENGINE_ERROR_CODE default_item_allocate(ENGINE_HANDLE* handle,
    }
 
    hash_item *it;
-   it = item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
+   it = item_alloc(engine, key, nkey, flags, engine->server.core->realtime(exptime),
+                   nbytes, cookie);
 
    if (it != NULL) {
       *item = it;
@@ -468,8 +469,9 @@ static ENGINE_ERROR_CODE default_arithmetic(ENGINE_HANDLE* handle,
                                OPERATION_ADD, cookie)) == ENGINE_KEY_EEXISTS) {
             item_release(engine, item);
             return default_arithmetic(handle, cookie, key, nkey, increment,
-                                      create, delta, initial, exptime, cas,
-                                      result, vbucket);
+                                      create, delta, initial,
+                                      engine->server.core->realtime(exptime),
+                                      cas, result, vbucket);
          }
 
          *result = initial;
