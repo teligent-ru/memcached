@@ -36,6 +36,7 @@
 /ltmain.sh
 /mcstat
 /m4/version.m4
+/mcstat
 /memcached
 /memcached-*.tar.gz
 /memcached-debug
