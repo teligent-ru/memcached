@@ -276,6 +276,9 @@ static void settings_init(void) {
     settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
+    settings.dispatcher.num_executors = 2;
+    settings.dispatcher.num_blocking = 1;
+    settings.dispatcher.num_log_elements = 100;
 }
 
 /*
@@ -1924,6 +1927,8 @@ static void process_bin_stat(conn *c) {
         } else if (strncmp(subcommand, "reset", 5) == 0) {
             stats_reset(c);
             settings.engine.v1->reset_stats(settings.engine.v0, c);
+        } else if (strncmp(subcommand, "dispatcher", 10) == 0) {
+            dispatcher_stats(&append_stats, c);
         } else if (strncmp(subcommand, "settings", 8) == 0) {
             process_stat_settings(&append_stats, c);
         } else if (strncmp(subcommand, "detail", 6) == 0) {
@@ -3885,6 +3890,13 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
          ptr = ptr->next) {
         APPEND_STAT("binary_extension", "%s", ptr->get_name());
     }
+
+    APPEND_STAT("dispatcher_tot_num_executors", "%d",
+                settings.dispatcher.num_executors);
+    APPEND_STAT("dispatcher_num_blocking_executors", "%d",
+                settings.dispatcher.num_blocking);
+    APPEND_STAT("dispatcher_num_log_elements", "%d",
+                settings.dispatcher.num_log_elements);
 }
 
 static char *process_stat(conn *c, token_t *tokens, const size_t ntokens) {
@@ -3917,6 +3929,8 @@ static char *process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         }
         /* Output already generated */
         return NULL;
+    } else if (strcmp(subcommand, "dispatcher") == 0) {
+        dispatcher_stats(&append_stats, c);
     } else if (strcmp(subcommand, "settings") == 0) {
         process_stat_settings(&append_stats, c);
     } else if (strcmp(subcommand, "cachedump") == 0) {
@@ -6824,6 +6838,11 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .perform_callbacks = perform_callbacks,
     };
 
+    static SERVER_DISPATCHER_API dispatcher_api = {
+        .schedule = dispatcher_schedule,
+        .cancel = dispatcher_cancel
+    };
+
     static SERVER_HANDLE_V1 rv = {
         .interface = 1,
         .core = &core_api,
@@ -6831,7 +6850,8 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .extension = &extension_api,
         .callback = &callback_api,
         .log = &server_log_api,
-        .cookie = &server_cookie_api
+        .cookie = &server_cookie_api,
+        .dispatcher = &dispatcher_api
     };
 
     if (rv.engine == NULL) {
@@ -7420,6 +7440,11 @@ int main (int argc, char **argv) {
     /* initialize main thread libevent instance */
     main_base = event_init();
 
+    if (dispatcher_setup() != 0) {
+        /* Error already reported */
+        exit(EXIT_FAILURE);
+    }
+
     /* Load the storage engine */
     ENGINE_HANDLE *engine_handle = NULL;
     if (!load_engine(engine,get_server_api,settings.extensions.logger,&engine_handle)) {
@@ -7551,6 +7576,7 @@ int main (int argc, char **argv) {
     threads_shutdown();
 
     settings.engine.v1->destroy(settings.engine.v0, false);
+    dispatcher_shutdown();
 
     /* remove the PID file if we're a daemon */
     if (do_daemonize)

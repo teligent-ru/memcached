@@ -58,6 +58,7 @@ MCSTAT_OBJS = ${MCSTAT_SRC:%.c=.libs/%.o}
 
 MEMCACHED_SRC = \
 	      daemon/cache.c \
+              daemon/dispatcher.c \
 	      daemon/hash.c \
 	      daemon/isasl.c \
 	      daemon/memcached.c \

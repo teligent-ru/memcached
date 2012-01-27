@@ -201,6 +201,11 @@ struct settings {
         EXTENSION_ASCII_PROTOCOL_DESCRIPTOR *ascii;
         EXTENSION_BINARY_PROTOCOL_DESCRIPTOR *binary;
     } extensions;
+    struct {
+        int num_executors; /* The total number of executors */
+        int num_blocking; /* Number of executors running blocking tasks */
+        int num_log_elements; /* number of log elements _per_ executor */
+    } dispatcher;
 };
 
 struct engine_event_handler {
@@ -476,4 +481,13 @@ bool conn_setup_tap_stream(conn *c);
 
 #define likely(x)       __builtin_expect((x),1)
 #define unlikely(x)     __builtin_expect((x),0)
+
+/* The dispatcher */
+
+int dispatcher_setup(void);
+void dispatcher_shutdown(void);
+int dispatcher_schedule(const void *module, memcached_task_t *task);
+void dispatcher_cancel(const void *module, memcached_taskid_t taskid);
+void dispatcher_stats(ADD_STAT add_stats, void *c);
+
 #endif

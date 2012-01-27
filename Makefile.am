@@ -7,6 +7,7 @@ noinst_PROGRAMS = sizes testapp timedrun
 pkginclude_HEADERS = \
                      include/memcached/callback.h \
                      include/memcached/config_parser.h \
+                     include/memcached/dispatcher.h \
                      include/memcached/engine.h \
                      include/memcached/engine_common.h \
                      include/memcached/engine_testapp.h \
@@ -86,6 +87,7 @@ memcached_SOURCES = \
                     daemon/cache.h \
                     config_static.h \
                     daemon/daemon.c \
+                    daemon/dispatcher.c \
                     daemon/hash.c \
                     daemon/hash.h \
                     daemon/memcached.c\
@@ -267,7 +269,7 @@ test_engine: engine_testapp basic_engine_testsuite.la
 	./engine_testapp -E .libs/default_engine.so -t $(TEST_TIMEOUT) \
 		-T .libs/basic_engine_testsuite.so
 
-test: $(bin_PROGRAMS) $(noinst_PROGRAMS) $(pkglib_LTLIBRARIES) $(ENGINE_TESTS)
+test: $(bin_PROGRAMS) $(noinst_PROGRAMS) $(pkglib_LTLIBRARIES) $(ENGINE_TESTS) check
 	./sizes
 	./testapp
 	prove $(srcdir)/t
@@ -297,6 +299,11 @@ test: $(bin_PROGRAMS) $(noinst_PROGRAMS) $(pkglib_LTLIBRARIES) $(ENGINE_TESTS)
 docs:
 	${DOXYGEN} config/Doxyfile-api
 	${DOXYGEN} config/Doxyfile
+
+check_PROGRAMS = programs/dispatcher-unit-test
+TESTS=$(check_PROGRAMS)
+
+programs_dispatcher_unit_test_SOURCES=programs/dispatcher-unit-test.c
 
 LE_VERSION=1.4.14b-stable
 LE_FN=libevent-$(LE_VERSION).tar.gz

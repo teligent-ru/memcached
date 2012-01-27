@@ -49,6 +49,7 @@
 /memcached.spec
 /memcached_dtrace.h
 /mkinstalldirs
+/programs/dispatcher-unit-test
 /sizes
 /stamp-h1
 /t/binary-sasl.t

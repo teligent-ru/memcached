@@ -5,6 +5,7 @@
 
 #include <memcached/types.h>
 #include <memcached/config_parser.h>
+#include <memcached/dispatcher.h>
 
 #ifdef __cplusplus
 extern "C" {
