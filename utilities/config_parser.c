@@ -196,12 +196,12 @@ int parse_config(const char *str, struct config_item *items, FILE *error) {
          ++ii;
       }
 
-      if (items[ii].key == NULL) {
-         if (error != NULL) {
-            fprintf(error, "Unsupported key: <%s>\n", key);
-         }
-         ret = 1;
-      }
+//      if (items[ii].key == NULL) {
+//         if (error != NULL) {
+//            fprintf(error, "Unsupported key: <%s>\n", key);
+//         }
+//         ret = 1;
+//      }
    }
    return ret;
 }
